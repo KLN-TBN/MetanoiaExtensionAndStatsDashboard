@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  background-color: #050505;
+  color: #00f2ff;
+  font-family: var(--font-mono);
+}
+
+.tron-border {
+  border: 1px solid #00f2ff;
+  box-shadow: 0 0 10px #00f2ff, inset 0 0 5px #00f2ff;
+}
+
+.tron-glow {
+  text-shadow: 0 0 10px #00f2ff;
+}
+
+.tron-button {
+  background: transparent;
+  border: 1px solid #00f2ff;
+  color: #00f2ff;
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.tron-button:hover {
+  background: #00f2ff;
+  color: #050505;
+  box-shadow: 0 0 20px #00f2ff;
+}
+
+.tron-card {
+  background: rgba(0, 242, 255, 0.05);
+  border: 1px solid rgba(0, 242, 255, 0.3);
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.tron-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00f2ff, transparent);
+  animation: scan 3s linear infinite;
+}
+
+@keyframes scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+

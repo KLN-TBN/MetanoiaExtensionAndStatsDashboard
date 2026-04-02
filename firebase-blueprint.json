@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user preferences and aggregated stats.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "surveyResults": { "type": "array", "items": { "type": "string" } },
+        "protectionProfile": { 
+          "type": "object",
+          "description": "Weights for each malady based on feedback."
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "timeSaved": { "type": "number" },
+            "moneySaved": { "type": "number" },
+            "viewpointsProvided": { "type": "number" },
+            "rageAvoided": { "type": "number" }
+          }
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "MaladyLog": {
+      "title": "Malady Log",
+      "description": "Records of each malady flagged by the extension.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "maladyType": { "type": "string" },
+        "explanation": { "type": "string" },
+        "metricValue": { "type": "number" },
+        "metricType": { "type": "string" },
+        "feedback": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "url": { "type": "string" },
+        "flaggedText": { "type": "string" }
+      },
+      "required": ["uid", "maladyType", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual user profiles."
+    },
+    "/malady_logs/{logId}": {
+      "schema": "MaladyLog",
+      "description": "Logs of flagged content."
+    }
+  }
+}

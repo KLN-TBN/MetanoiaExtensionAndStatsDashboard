@@ -1,0 +1,83 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - uid: string (required)
+//   - email: string (required)
+//   - surveyResults: list (optional)
+//   - protectionProfile: map (optional)
+//   - stats: map (optional)
+//
+// Collection: malady_logs
+// Document ID: {logId}
+// Fields:
+//   - uid: string (required)
+//   - maladyType: string (required)
+//   - explanation: string (required)
+//   - metricValue: number (required)
+//   - metricType: string (required)
+//   - feedback: string (optional)
+//   - timestamp: timestamp (required)
+//   - url: string (required)
+//   - flaggedText: string (required)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "kylantobin@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.uid is string && data.email is string;
+    }
+
+    function isValidMaladyLog(data) {
+      return data.uid == request.auth.uid &&
+             data.maladyType is string &&
+             data.metricValue is number &&
+             data.timestamp is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /malady_logs/{logId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidMaladyLog(request.resource.data);
+      allow update: if isDocOwner() && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['feedback'])
+      );
+      allow delete: if isDocOwner();
+    }
+  }
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 300px;
+      background: #050505;
+      color: #00f2ff;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 16px;
+      border: 1px solid #00f2ff;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 0 0 16px 0;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px #00f2ff;
+    }
+    .status {
+      font-size: 10px;
+      margin-bottom: 20px;
+      opacity: 0.6;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      background: transparent;
+      border: 1px solid #00f2ff;
+      color: #00f2ff;
+      padding: 10px;
+      text-align: center;
+      text-decoration: none;
+      text-transform: uppercase;
+      font-size: 12px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn:hover {
+      background: #00f2ff;
+      color: #050505;
+      box-shadow: 0 0 15px #00f2ff;
+    }
+    .footer {
+      font-size: 9px;
+      text-align: center;
+      margin-top: 16px;
+      opacity: 0.4;
+    }
+  </style>
+</head>
+<body>
+  <h2>METANOIA</h2>
+  <div class="status" id="status">INITIALIZING...</div>
+  
+  <button class="btn" id="dashboardBtn">Open Dashboard</button>
+  <button class="btn" id="syncBtn">Sync Connection</button>
+  
+  <div class="footer">PROTECTION ACTIVE</div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

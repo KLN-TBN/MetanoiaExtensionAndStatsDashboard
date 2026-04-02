@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Metanoia",
+  "version": "1.0",
+  "description": "Protect your attention from digital maladies.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "https://ais-dev-gv2ftlzgqxz6yb5q7t2w5y-423445672267.europe-west2.run.app/*",
+    "https://metanoia-stats-dashboard-797861117032.us-west1.run.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ]
+}
