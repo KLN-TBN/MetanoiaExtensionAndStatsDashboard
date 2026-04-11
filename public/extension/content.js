@@ -2,15 +2,13 @@
 window.addEventListener('METANOIA_SYNC', (event) => {
   const { uid, appUrl } = event.detail;
   chrome.runtime.sendMessage({ type: 'SET_CONFIG', uid, appUrl });
+  window.postMessage({ type: 'EXTENSION_CONNECTED' }, '*');
 });
 
-// Listen for sync request from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'REQUEST_SYNC') {
-    // Dispatch event to the web app to trigger sync
     window.postMessage({ type: 'REQUEST_SYNC' }, '*');
   }
-
   if (request.type === 'SERVER_LOG') {
     if (request.logType === 'error') {
       console.error(request.message);
@@ -20,28 +18,264 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-let scanTimer = null;
-let lastScannedText = '';
-let isScanning = false;
-const processedFlaggedTexts = new Set();
-
-const SCAN_DELAY = 10000; // 10 seconds idle
+// --- Constants ---
+const SCAN_DELAY = 10000;
 const EXCLUDED_DOMAINS = [
   'localhost',
   'ais-dev',
   'ais-pre',
   'chrome.google.com',
-  'chrome://'
+  'chrome://',
+  'metanoia-stats-dashboard'
 ];
 
-// Listen for page load
-window.addEventListener('load', () => {
-  startScanTimer();
+const MALADY_COLORS = {
+  rabbit_hole: '#00f2ff',
+  outrage_cycle: '#ff4444',
+  echo_chamber: '#00ff00',
+  buy_now: '#ff00ff'
+};
+
+const MALADY_LABELS = {
+  rabbit_hole: 'Rabbit Hole',
+  outrage_cycle: 'Outrage Cycle',
+  echo_chamber: 'Echo Chamber',
+  buy_now: 'Buy Now Reflex'
+};
+
+// --- Scan state ---
+let scanTimer = null;
+let lastScannedText = '';
+let isScanning = false;
+const processedFlaggedTexts = new Set();
+
+// --- Drawer / badge state ---
+let activeMaladyCount = 0;
+let badgeEl = null;
+let lastScanMaladies = [];
+let drawerAutoCloseTimer = null;
+let drawerRemainingTime = 8000;
+let drawerTimerStart = null;
+
+// --- Scroll cycling state ---
+const scrollIndices = {};
+
+// =============================================================
+//  SCAN INDICATOR
+// =============================================================
+let scanIndicatorEl = null;
+
+function setScanIndicator(active) {
+  if (!scanIndicatorEl) {
+    scanIndicatorEl = document.createElement('div');
+    scanIndicatorEl.className = 'metanoia-scan-indicator';
+    document.body.appendChild(scanIndicatorEl);
+  }
+  if (active) {
+    scanIndicatorEl.textContent = 'M · SCANNING...';
+    scanIndicatorEl.classList.add('visible');
+  } else {
+    scanIndicatorEl.classList.remove('visible');
+  }
+}
+
+// =============================================================
+//  SUMMARY DRAWER
+// =============================================================
+function showSummaryDrawer(newlyInjected) {
+  // Accumulate across scans — append new maladies to the running list
+  lastScanMaladies = [...lastScanMaladies, ...(newlyInjected || [])];
+
+  // Remove any existing drawer and cancel its timer
+  const existing = document.getElementById('metanoia-summary');
+  if (existing) existing.remove();
+  if (drawerAutoCloseTimer) { clearTimeout(drawerAutoCloseTimer); drawerAutoCloseTimer = null; }
+
+  // Derive counts from the live DOM so multi-scan totals are always accurate
+  const counts = {};
+  document.querySelectorAll('.metanoia-marker[data-malady-type]').forEach(el => {
+    const type = el.getAttribute('data-malady-type');
+    counts[type] = (counts[type] || 0) + 1;
+  });
+
+  const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (totalCount === 0) return;
+
+  const tagsHtml = Object.entries(counts).map(([type, count]) => {
+    const color = MALADY_COLORS[type] || '#00f2ff';
+    const label = MALADY_LABELS[type] || type;
+    return `<span class="metanoia-tag" data-type="${type}" style="border-color:${color};color:${color}">${count > 1 ? count + '× ' : ''}${label}</span>`;
+  }).join('');
+
+  const drawer = document.createElement('div');
+  drawer.id = 'metanoia-summary';
+  drawer.className = 'metanoia-summary';
+  drawer.innerHTML = `
+    <div class="metanoia-summary-inner">
+      <div class="metanoia-summary-header">
+        <span class="metanoia-summary-title">M · ${totalCount} THREAT${totalCount > 1 ? 'S' : ''} DETECTED</span>
+        <button class="metanoia-summary-close">×</button>
+      </div>
+      <div class="metanoia-summary-tags">${tagsHtml}</div>
+    </div>
+    <div class="metanoia-summary-progress"></div>
+  `;
+
+  document.body.appendChild(drawer);
+
+  // Animate in after paint
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    drawer.classList.add('visible');
+    drawer.querySelector('.metanoia-summary-progress').classList.add('running');
+  }));
+
+  // Tag click → scroll to that malady
+  drawer.querySelectorAll('.metanoia-tag[data-type]').forEach(tag => {
+    tag.addEventListener('click', () => scrollToMalady(tag.getAttribute('data-type')));
+  });
+
+  // Close button → collapse to badge
+  drawer.querySelector('.metanoia-summary-close').addEventListener('click', () => {
+    clearTimeout(drawerAutoCloseTimer);
+    drawerAutoCloseTimer = null;
+    collapseDrawerToBadge(drawer);
+  });
+
+  // Start auto-dismiss timer
+  drawerRemainingTime = 8000;
+  drawerTimerStart = Date.now();
+  drawerAutoCloseTimer = setTimeout(() => collapseDrawerToBadge(drawer), drawerRemainingTime);
+}
+
+function collapseDrawerToBadge(drawer) {
+  drawerAutoCloseTimer = null;
+  dismissDrawer(drawer);
+  if (activeMaladyCount > 0) showBadge();
+}
+
+function dismissDrawer(drawer) {
+  drawer.classList.remove('visible');
+  setTimeout(() => drawer.remove(), 400);
+}
+
+// =============================================================
+//  VISIBILITY — pause/resume drawer timer when tab is hidden
+// =============================================================
+document.addEventListener('visibilitychange', () => {
+  const drawer = document.getElementById('metanoia-summary');
+  if (!drawer) return;
+
+  if (document.hidden) {
+    // Pause: cancel timer and freeze the progress bar animation
+    if (drawerAutoCloseTimer) {
+      clearTimeout(drawerAutoCloseTimer);
+      drawerAutoCloseTimer = null;
+      drawerRemainingTime = Math.max(0, drawerRemainingTime - (Date.now() - drawerTimerStart));
+    }
+    const progress = drawer.querySelector('.metanoia-summary-progress');
+    if (progress) progress.classList.add('paused');
+  } else {
+    // Resume: restart timer with whatever time was left
+    const progress = drawer.querySelector('.metanoia-summary-progress');
+    if (progress) progress.classList.remove('paused');
+    drawerTimerStart = Date.now();
+    drawerAutoCloseTimer = setTimeout(
+      () => collapseDrawerToBadge(drawer),
+      Math.max(drawerRemainingTime, 500)
+    );
+  }
 });
 
-// Reset timer on scroll or click (user is active)
+// =============================================================
+//  PERSISTENT BADGE
+// =============================================================
+function showBadge() {
+  if (badgeEl) { updateBadge(); return; }
+  badgeEl = document.createElement('div');
+  badgeEl.className = 'metanoia-badge';
+  badgeEl.title = 'Click to review threats';
+  updateBadgeContent();
+  document.body.appendChild(badgeEl);
+  requestAnimationFrame(() => requestAnimationFrame(() => badgeEl.classList.add('visible')));
+
+  badgeEl.addEventListener('click', () => {
+    removeBadge();
+    showSummaryDrawer(); // reads counts from live DOM, no new maladies to append
+  });
+}
+
+function updateBadgeContent() {
+  if (!badgeEl) return;
+  badgeEl.textContent = `M · ${activeMaladyCount}`;
+}
+
+function updateBadge() {
+  if (!badgeEl) return;
+  if (activeMaladyCount === 0) {
+    removeBadge();
+  } else {
+    updateBadgeContent();
+  }
+}
+
+function removeBadge() {
+  if (!badgeEl) return;
+  badgeEl.classList.remove('visible');
+  const el = badgeEl;
+  badgeEl = null;
+  setTimeout(() => el.remove(), 300);
+}
+
+// =============================================================
+//  SCROLL TO MALADY
+// =============================================================
+function scrollToMalady(type) {
+  const markers = Array.from(document.querySelectorAll(`.metanoia-marker[data-malady-type="${type}"]`));
+  if (markers.length === 0) return;
+
+  if (scrollIndices[type] === undefined) scrollIndices[type] = 0;
+  const idx = scrollIndices[type] % markers.length;
+  scrollIndices[type] = (idx + 1) % markers.length;
+
+  const target = markers[idx];
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Flash the dot to confirm which one was jumped to
+  const dot = target.querySelector('.metanoia-dot');
+  if (dot) {
+    dot.classList.remove('flashing');
+    void dot.offsetWidth; // force reflow so animation restarts cleanly
+    dot.classList.add('flashing');
+    setTimeout(() => dot.classList.remove('flashing'), 700);
+  }
+}
+
+// =============================================================
+//  SCAN TIMER
+// =============================================================
+if (document.readyState === 'complete') {
+  startScanTimer();
+} else {
+  window.addEventListener('load', () => startScanTimer());
+}
 window.addEventListener('scroll', () => resetTimer());
 window.addEventListener('click', () => resetTimer());
+window.addEventListener('touchend', () => resetTimer()); // YouTube Shorts swipe
+
+// Detect SPA navigation (YouTube, Reddit, etc.) by watching for URL changes.
+// When the URL changes: wipe per-page state and schedule a fresh scan.
+let lastObservedUrl = location.href;
+new MutationObserver(() => {
+  if (location.href !== lastObservedUrl) {
+    lastObservedUrl = location.href;
+    processedFlaggedTexts.clear();
+    lastScannedText = '';
+    lastScanMaladies = [];
+    activeMaladyCount = 0;
+    removeBadge();
+    startScanTimer();
+  }
+}).observe(document, { subtree: true, childList: true });
 
 function startScanTimer() {
   if (scanTimer) clearTimeout(scanTimer);
@@ -57,216 +291,285 @@ async function performScan() {
 
   const hostname = window.location.hostname;
   const pageTitle = document.title.toUpperCase();
-  if (EXCLUDED_DOMAINS.some(domain => hostname.includes(domain)) || pageTitle.includes('METANOIA DASHBOARD')) {
-    console.log(`[Metanoia Content] Skipping scan for excluded domain or title: ${hostname} / ${pageTitle}`);
+  if (EXCLUDED_DOMAINS.some(d => hostname.includes(d)) || pageTitle.includes('METANOIA DASHBOARD')) {
     return;
   }
 
-  // Extract visible text - trim and normalize to prevent minor changes from triggering
-  // Also remove numbers/dates which change frequently to avoid false "content changed" triggers
-  const currentText = document.body.innerText.slice(0, 5000)
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\d+/g, '#'); 
-  
-  // Only scan if content has changed significantly
-  if (currentText === lastScannedText) {
-    console.log('[Metanoia Content] Content unchanged since last scan. Skipping.');
-    return;
-  }
+  const rawText = document.body.innerText.slice(0, 5000).trim().replace(/\s+/g, ' ');
+  // Normalize numbers only for change-detection — NOT for the API payload,
+  // otherwise Gemini returns flaggedText with '#' that can't be found in the DOM.
+  const normalizedForComparison = rawText.replace(/\d+/g, '#');
+
+  if (normalizedForComparison === lastScannedText) return;
 
   isScanning = true;
-  console.log('[Metanoia Content] 10s idle reached and content changed. Starting scan...');
-  lastScannedText = currentText;
-  const url = window.location.href;
+  lastScannedText = normalizedForComparison;
+  setScanIndicator(true);
 
-  chrome.runtime.sendMessage({ 
-    type: 'SCAN_PAGE', 
-    text: currentText, 
-    url: url 
+  // Safety net: if the MV3 service worker callback never fires, clear state after 30s
+  let callbackFired = false;
+  const safetyTimeout = setTimeout(() => {
+    if (!callbackFired) {
+      isScanning = false;
+      setScanIndicator(false);
+      console.warn('[Metanoia Content] Scan timed out — no response from background.');
+    }
+  }, 30000);
+
+  chrome.runtime.sendMessage({
+    type: 'SCAN_PAGE',
+    text: rawText,   // real text so flaggedText matches the actual DOM
+    url: window.location.href
   }, (response) => {
+    callbackFired = true;
+    clearTimeout(safetyTimeout);
     isScanning = false;
-    if (chrome.runtime.lastError) {
-      console.error('[Metanoia Content] Runtime error:', chrome.runtime.lastError);
+    setScanIndicator(false);
+
+    if (chrome.runtime.lastError || !response || response.error) {
+      console.error('[Metanoia Content] Scan error:', chrome.runtime.lastError || response?.error);
+      startScanTimer(); // keep scanning even on error
       return;
     }
 
-    if (response && response.error) {
-      console.error(`[Metanoia Content] Scan failed: ${response.error}`);
-      return;
-    }
-
-    if (response && response.maladies) {
-      console.log(`[Metanoia Content] Received ${response.maladies.length} maladies to process.`);
+    if (response.maladies && response.maladies.length > 0) {
+      const injected = [];
       response.maladies.forEach(m => {
-        // Skip if we've already flagged this exact text on this page
-        if (processedFlaggedTexts.has(m.flaggedText)) {
-          console.log(`[Metanoia Content] Skipping duplicate malady: ${m.flaggedText}`);
-          return;
+        if (!processedFlaggedTexts.has(normKey(m.flaggedText))) {
+          if (injectGutterMarker(m)) {
+            injected.push(m);
+          }
         }
-        injectMaladyIcon(m);
       });
+      if (injected.length > 0) {
+        showSummaryDrawer(injected);
+      }
     }
+
+    // No reschedule — scroll/click listeners and URL observer handle re-scanning
   });
 }
 
-function injectMaladyIcon(malady) {
-  const targetText = malady.flaggedText.toLowerCase().trim();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-  let node;
+// =============================================================
+//  GUTTER MARKER INJECTION
+// =============================================================
+function getBlockAncestor(el) {
+  const preferred = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'TD', 'TH', 'FIGCAPTION']);
+  const fallbackTags = new Set(['DIV', 'ARTICLE', 'SECTION', 'MAIN', 'ASIDE']);
+  let fallback = null;
+  let current = el.parentElement;
 
-  while (node = walker.nextNode()) {
-    const nodeText = node.textContent.toLowerCase();
-    const index = nodeText.indexOf(targetText);
-    
-    if (index !== -1) {
-      processedFlaggedTexts.add(malady.flaggedText);
+  while (current && current !== document.body) {
+    if (preferred.has(current.tagName)) return current;
+    if (!fallback && fallbackTags.has(current.tagName)) fallback = current;
+    current = current.parentElement;
+  }
 
-      // Create a range to wrap the text
-      const range = document.createRange();
-      range.setStart(node, index);
-      range.setEnd(node, index + targetText.length);
-      
-      const highlight = document.createElement('span');
-      highlight.className = `metanoia-highlight ${malady.maladyType}`;
-      range.surroundContents(highlight);
+  return fallback || el.parentElement || document.body;
+}
 
-      const icon = document.createElement('div');
-      icon.className = 'metanoia-icon';
-      
-      // Use specific icons for maladies
-      let iconChar = '⚠️';
-      if (malady.maladyType === 'rabbit_hole') iconChar = '🕳️';
-      if (malady.maladyType === 'outrage_cycle') iconChar = '🔥';
-      if (malady.maladyType === 'echo_chamber') iconChar = '📢';
-      if (malady.maladyType === 'buy_now') iconChar = '💰';
-      
-      icon.innerHTML = iconChar;
-      
-      const tooltip = document.createElement('div');
-      tooltip.className = 'metanoia-tooltip';
-      
-      let metricHtml = '';
-      if (malady.metricValue && malady.metricValue > 0) {
-        metricHtml = `<span class="metanoia-metric">+${malady.metricValue} ${malady.unit}</span>`;
-      }
+// Escapes HTML special characters in Gemini-provided strings before injecting into innerHTML.
+// Without this, a '<' or '>' in an explanation breaks the entire popover template.
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
-      let counterHtml = '';
-      if (malady.counterPerspective) {
-        counterHtml = `
-          <div class="metanoia-counter-perspective">
-            <div class="metanoia-label">Counter Perspective</div>
-            <p>${malady.counterPerspective}</p>
-          </div>
-        `;
-      }
+// Normalised key for processedFlaggedTexts — matches the same normalisation used
+// in DOM search so Gemini's minor variations don't bypass the dedup check.
+function normKey(str) {
+  return str.toLowerCase().trim().replace(/\s+/g, ' ');
+}
 
-      tooltip.innerHTML = `
-        <div class="metanoia-tooltip-content">
-          <h4>${malady.title}</h4>
-          <p>${malady.explanation}</p>
-          ${counterHtml}
-          <div class="metanoia-actions">
-            <div class="metanoia-feedback">
-              <button class="metanoia-btn up" title="Helpful">👍</button>
-              <button class="metanoia-btn down" title="Not helpful">👎</button>
-            </div>
-            ${metricHtml}
-          </div>
-        </div>
-      `;
-
-      // Position logic - place icon relative to the highlight span
-      const rect = highlight.getBoundingClientRect();
-      let top = window.scrollY + rect.top + (rect.height / 2) - 18;
-      let left = window.scrollX + rect.left - 42; // Closer to text
-
-      // Ensure icon doesn't clip off the left edge of the viewport
-      if (left < window.scrollX + 10) {
-        left = window.scrollX + rect.right + 12;
-      }
-
-      // Ensure icon doesn't clip off the top edge of the viewport
-      if (top < window.scrollY + 10) {
-        top = window.scrollY + 10;
-      }
-      
-      // Ensure icon doesn't clip off the right edge of the viewport
-      const viewportWidth = window.innerWidth;
-      if (left + 36 > window.scrollX + viewportWidth - 10) {
-        left = window.scrollX + viewportWidth - 46;
-      }
-
-      icon.style.top = `${top}px`;
-      icon.style.left = `${left}px`;
-
-      // Add a connecting line
-      const line = document.createElement('div');
-      line.className = 'metanoia-connector';
-      
-      const updateLine = () => {
-        const iRect = icon.getBoundingClientRect();
-        const hRect = highlight.getBoundingClientRect();
-        
-        const x1 = iRect.left + iRect.width / 2;
-        const y1 = iRect.top + iRect.height / 2;
-        const x2 = hRect.left + hRect.width / 2;
-        const y2 = hRect.top + hRect.height / 2;
-        
-        const length = Math.sqrt((x2-x1)**2 + (y2-y1)**2);
-        const angle = Math.atan2(y2-y1, x2-x1) * 180 / Math.PI;
-        
-        line.style.width = `${length}px`;
-        line.style.transform = `rotate(${angle}deg)`;
-        line.style.top = `${y1 + window.scrollY}px`;
-        line.style.left = `${x1 + window.scrollX}px`;
-      };
-
-      // Add tooltip to icon so it stays when hovering over tooltip
-      icon.appendChild(tooltip);
-
-      // Feedback listeners
-      const upBtn = tooltip.querySelector('.up');
-      const downBtn = tooltip.querySelector('.down');
-
-      const cleanup = () => {
-        icon.remove();
-        line.remove();
-        // Unwrap highlight but keep text
-        const parent = highlight.parentNode;
-        if (parent) {
-          while(highlight.firstChild) parent.insertBefore(highlight.firstChild, highlight);
-          parent.removeChild(highlight);
-        }
-      };
-
-      upBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        chrome.runtime.sendMessage({ type: 'FEEDBACK', logId: malady.logId, feedback: 'up' });
-        upBtn.classList.add('selected');
-        downBtn.classList.remove('selected');
-        highlight.classList.add('active');
-        setTimeout(cleanup, 1500);
-      });
-
-      downBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        chrome.runtime.sendMessage({ type: 'FEEDBACK', logId: malady.logId, feedback: 'down' });
-        downBtn.classList.add('selected');
-        upBtn.classList.remove('selected');
-        highlight.classList.add('active');
-        setTimeout(cleanup, 1500);
-      });
-
-      document.body.appendChild(icon);
-      document.body.appendChild(line);
-      updateLine();
-      
-      // Update line on scroll/resize
-      window.addEventListener('scroll', updateLine, { passive: true });
-      window.addEventListener('resize', updateLine, { passive: true });
-
-      break; 
+// Maps a position in a whitespace-normalized string back to the raw string position.
+// Used so we can search normalized text but still create a precise DOM Range.
+function normToRawIndex(rawStr, normIndex) {
+  let normPos = 0;
+  let prevWasWS = false;
+  for (let i = 0; i <= rawStr.length; i++) {
+    if (normPos === normIndex) return i;
+    if (i === rawStr.length) break;
+    const isWS = /\s/.test(rawStr[i]);
+    if (isWS) {
+      if (!prevWasWS) normPos++;
+      prevWasWS = true;
+    } else {
+      normPos++;
+      prevWasWS = false;
     }
   }
+  return rawStr.length;
+}
+
+function injectGutterMarker(malady) {
+  // Normalize target the same way rawText was normalized before sending to Gemini
+  const targetText = malady.flaggedText.toLowerCase().trim().replace(/\s+/g, ' ');
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  let injected = false;
+
+  while ((node = walker.nextNode())) {
+    // Normalize the node text for comparison
+    const nodeNorm = node.textContent.replace(/\s+/g, ' ').toLowerCase();
+    const normIndex = nodeNorm.indexOf(targetText);
+
+    if (normIndex !== -1) {
+      processedFlaggedTexts.add(normKey(malady.flaggedText));
+
+      // Map normalized indices back to raw positions for the Range
+      const rawStart = normToRawIndex(node.textContent, normIndex);
+      const rawEnd   = normToRawIndex(node.textContent, normIndex + targetText.length);
+
+      const range = document.createRange();
+      range.setStart(node, rawStart);
+      range.setEnd(node, rawEnd);
+
+      const highlight = document.createElement('span');
+      highlight.className = `metanoia-highlight ${malady.maladyType}`;
+
+      try {
+        range.surroundContents(highlight);
+      } catch (e) {
+        // Range crosses element boundaries — fall through to markerless fallback
+        highlight.remove();
+        break;
+      }
+
+      const block = getBlockAncestor(highlight);
+      attachMarker(malady, block, highlight);
+      injected = true;
+      break;
+    }
+  }
+
+  if (injected) return true;
+
+  // Fallback: text spans multiple elements (common on Amazon, news sites).
+  // Find the block element whose innerText contains the flagged text (normalized),
+  // inject the marker there without a text highlight so something always shows.
+  if (!processedFlaggedTexts.has(normKey(malady.flaggedText))) {
+    const candidates = document.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, td, div[class], span[class]');
+    for (const el of candidates) {
+      const elText = (el.innerText || '').replace(/\s+/g, ' ').toLowerCase();
+      if (elText.includes(targetText) && elText.length < targetText.length * 8) {
+        processedFlaggedTexts.add(normKey(malady.flaggedText));
+        attachMarker(malady, el, null); // null = no highlight to unwrap
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Builds and inserts the gutter marker into `block`, wiring up all interactions.
+// `highlight` is the wrapping span for the flagged text, or null if unavailable.
+function attachMarker(malady, block, highlight) {
+  const color = MALADY_COLORS[malady.maladyType] || '#00f2ff';
+  const label = esc(malady.title || MALADY_LABELS[malady.maladyType] || malady.maladyType);
+
+  let counterHtml = '';
+  if (malady.counterPerspective) {
+    counterHtml = `
+      <div class="metanoia-counter">
+        <div class="metanoia-counter-label">Counter Perspective</div>
+        <p>${esc(malady.counterPerspective)}</p>
+      </div>
+    `;
+  }
+
+  let metricHtml = '';
+  if (malady.metricValue && malady.metricValue > 0) {
+    metricHtml = `<span class="metanoia-metric">+${esc(String(malady.metricValue))}${esc(malady.unit || '')}</span>`;
+  }
+
+  const marker = document.createElement('span');
+  marker.className = `metanoia-marker ${malady.maladyType}`;
+  marker.setAttribute('data-malady-type', malady.maladyType);
+  marker.innerHTML = `
+    <span class="metanoia-dot" style="background:${color};box-shadow:0 0 6px ${color}">M</span>
+    <div class="metanoia-popover" style="border-color:${color};color:#f0f0f0;box-shadow:0 0 20px ${color}33">
+      <div class="metanoia-popover-header">
+        <span class="metanoia-popover-title" style="color:${color}">${label}</span>
+        <button class="metanoia-dismiss" title="Dismiss">×</button>
+      </div>
+      <p class="metanoia-popover-body" style="color:${color}">${esc(malady.explanation)}</p>
+      ${counterHtml}
+      <div class="metanoia-popover-footer">
+        <div class="metanoia-feedback">
+          <button class="metanoia-btn-fb up" style="border-color:${color};color:${color}" title="Helpful">👍</button>
+          <button class="metanoia-btn-fb down" style="border-color:${color};color:${color}" title="Not helpful">👎</button>
+        </div>
+        ${metricHtml}
+      </div>
+    </div>
+  `;
+
+  block.insertBefore(marker, block.firstChild);
+  activeMaladyCount++;
+
+  const popover = marker.querySelector('.metanoia-popover');
+  let hideTimer = null;
+
+  const showPopover = () => {
+    clearTimeout(hideTimer);
+    popover.style.display = 'block';
+    const rect = popover.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 20) {
+      popover.style.left = 'auto';
+      popover.style.right = '18px';
+    }
+  };
+  const scheduleHide = () => {
+    hideTimer = setTimeout(() => { popover.style.display = 'none'; }, 120);
+  };
+
+  marker.addEventListener('mouseenter', showPopover);
+  marker.addEventListener('mouseleave', scheduleHide);
+  popover.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+  popover.addEventListener('mouseleave', scheduleHide);
+
+  marker.querySelector('.metanoia-dismiss').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismissMarker(marker, highlight);
+  });
+
+  const upBtn = marker.querySelector('.up');
+  const downBtn = marker.querySelector('.down');
+
+  upBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ type: 'FEEDBACK', logId: malady.logId, feedback: 'up' });
+    upBtn.style.background = color;
+    upBtn.style.color = '#050505';
+    setTimeout(() => dismissMarker(marker, highlight), 1200);
+  });
+
+  downBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ type: 'FEEDBACK', logId: malady.logId, feedback: 'down' });
+    downBtn.style.background = '#ff4444';
+    downBtn.style.borderColor = '#ff4444';
+    downBtn.style.color = '#050505';
+    setTimeout(() => dismissMarker(marker, highlight), 1200);
+  });
+}
+
+function dismissMarker(marker, highlight) {
+  activeMaladyCount = Math.max(0, activeMaladyCount - 1);
+  updateBadge();
+
+  const dot = marker.querySelector('.metanoia-dot');
+  if (dot) dot.classList.add('exiting');
+  setTimeout(() => {
+    marker.remove();
+    if (highlight && highlight.parentNode) {
+      while (highlight.firstChild) highlight.parentNode.insertBefore(highlight.firstChild, highlight);
+      highlight.parentNode.removeChild(highlight);
+    }
+  }, 300);
 }

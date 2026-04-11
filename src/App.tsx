@@ -179,16 +179,27 @@ export default function App() {
 }
 
 function Login() {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSignIn = async () => {
+    setError(null);
+    try {
+      await signIn();
+    } catch (e: any) {
+      setError(e?.message || 'Login failed');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[#050505]">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="text-center space-y-8"
       >
         <div className="relative inline-block">
           <Shield className="w-24 h-24 text-[#00f2ff] tron-glow" />
-          <motion.div 
+          <motion.div
             animate={{ scale: [1, 1.2, 1] }}
             transition={{ repeat: Infinity, duration: 2 }}
             className="absolute inset-0 border-2 border-[#00f2ff] rounded-full opacity-30"
@@ -198,9 +209,10 @@ function Login() {
         <p className="text-[#00f2ff]/60 max-w-md mx-auto">
           A digital immune system for your attention. Reclaim your focus from the algorithms.
         </p>
-        <button onClick={signIn} className="tron-button px-12 py-4 text-xl">
-          Initialize Connection
+        <button onClick={handleSignIn} className="tron-button px-12 py-4 text-xl">
+          Login
         </button>
+        {error && <p className="text-red-400 text-sm max-w-md mx-auto">{error}</p>}
       </motion.div>
     </div>
   );
@@ -259,13 +271,26 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
   terminalEndRef: React.RefObject<HTMLDivElement | null>,
   wsStatus: 'connecting' | 'connected' | 'disconnected'
 }) {
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success'>('idle');
   const [downloading, setDownloading] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(false);
+
+  // Auto-sync the extension whenever the dashboard loads with an authenticated user.
+  // The content script on this page listens for METANOIA_SYNC on window, so no
+  // button click is required — the user just needs the dashboard open while logged in.
+  useEffect(() => {
+    const appUrl = window.location.origin.replace(/\/$/, '');
+    window.dispatchEvent(new CustomEvent('METANOIA_SYNC', {
+      detail: { uid: profile.uid, appUrl }
+    }));
+  }, [profile.uid]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'REQUEST_SYNC') {
         syncWithExtension();
+      }
+      if (event.data?.type === 'EXTENSION_CONNECTED') {
+        setExtensionConnected(true);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -306,19 +331,10 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
   };
 
   const syncWithExtension = () => {
-    setSyncStatus('syncing');
-    // In a real extension, we'd use chrome.runtime.sendMessage from the content script
-    // Since we're in the web app, we'll try to dispatch a custom event that the content script listens for
     const appUrl = window.location.origin.replace(/\/$/, '');
-    const event = new CustomEvent('METANOIA_SYNC', { 
-      detail: { 
-        uid: profile.uid, 
-        appUrl: appUrl
-      } 
-    });
-    window.dispatchEvent(event);
-    setTimeout(() => setSyncStatus('success'), 1000);
-    setTimeout(() => setSyncStatus('idle'), 3000);
+    window.dispatchEvent(new CustomEvent('METANOIA_SYNC', {
+      detail: { uid: profile.uid, appUrl }
+    }));
   };
 
   return (
@@ -334,15 +350,10 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
         <div className="flex gap-4 items-center">
           <div className="hidden md:flex flex-col items-end mr-4">
             <span className="text-[10px] uppercase tracking-widest text-[#00f2ff]/40 font-mono">Extension Status</span>
-            <span className="text-xs font-mono text-[#00f2ff]">CONNECTED_READY</span>
+            <span className={`text-xs font-mono ${extensionConnected ? 'text-green-400' : 'text-[#00f2ff]/40'}`}>
+              {extensionConnected ? 'CONNECTED' : 'NOT CONNECTED'}
+            </span>
           </div>
-          <button 
-            onClick={syncWithExtension}
-            className={`tron-button flex items-center gap-2 text-xs ${syncStatus === 'success' ? 'border-green-500 text-green-500' : ''}`}
-          >
-            <Zap className={`w-4 h-4 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            {syncStatus === 'idle' ? 'Sync Extension' : syncStatus === 'syncing' ? 'Syncing...' : 'Synced!'}
-          </button>
           <button onClick={signOut} className="tron-button flex items-center gap-2 text-xs">
             <LogOut className="w-4 h-4" /> Disconnect
           </button>
