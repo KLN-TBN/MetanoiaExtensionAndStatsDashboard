@@ -21,7 +21,7 @@ Metanoia is a digital wellness platform consisting of a Chrome extension and a w
 3. Server calls Gemini (`gemini-3-flash-preview`) and returns detected maladies
 4. Server validates each malady: discards unknown types and any whose `flaggedText` cannot be found (normalised) in the original source text — prevents phantom highlights
 5. Server writes verified malady logs to Firestore `malady_logs` collection and updates `users/{uid}/stats`
-6. Dashboard (`App.tsx`) subscribes to Firestore in real-time via `onSnapshot`
+6. Dashboard (`App.tsx`) subscribes to Firestore in real-time via `onSnapshot` and renders detection logs with feedback controls
 
 ### Dual Firebase SDK Usage
 - **Client-side** (`src/firebase.ts`): Uses `firebase` (web SDK) for auth and Firestore reads/listeners
@@ -29,8 +29,8 @@ Metanoia is a digital wellness platform consisting of a Chrome extension and a w
 - Both use the same `firestoreDatabaseId` from `firebase-applet-config.json` (not the default Firestore DB)
 - If `GOOGLE_APPLICATION_CREDENTIALS` env var is set, Admin SDK uses that service-account cert; otherwise falls back to ADC (works on Cloud Run)
 
-### WebSocket Live Terminal
-`server.ts` wraps `console.log`/`console.error` to broadcast all server logs to WebSocket clients. The dashboard (`/ws` endpoint) shows a live terminal panel. WebSocket upgrades are handled manually on the HTTP server before Vite intercepts them.
+### WebSocket
+`server.ts` wraps `console.log`/`console.error` to broadcast all server logs to WebSocket clients via `/ws`. WebSocket upgrades are handled manually on the HTTP server before Vite intercepts them. The dashboard **no longer connects to the WebSocket** — server logs are only visible in the server terminal or browser DevTools console. The `/ws` endpoint remains on the server for potential future use.
 
 ### Extension Download
 The dashboard packages `/public/extension/` files into a ZIP (via `jszip`) served directly from the browser. Files served at `/extension/*` from Vite's public directory.
@@ -60,6 +60,15 @@ The extension sends `REQUEST_SYNC` via `window.postMessage`; the dashboard liste
 - Clicking × dismisses the marker permanently (removes from DOM, decrements count)
 - Popover show/hide is CSS `visibility`+`opacity` toggled by a `.open` class (not `display:none`) to avoid the `mouseleave`/`mouseenter` race that caused flicker
 - Position adjustment (flip left/right when near viewport edge) runs in JS on `mouseenter`
+
+## Dashboard UX Conventions
+- **Stat cards** display `Math.round()` values — no decimals ever. Money uses a `$` prefix (e.g. `$7`), time/rage use a `min` suffix, viewpoints have no unit.
+- **Log items** use a coloured left border matching their malady type: rabbit_hole=cyan, outrage_cycle=red, echo_chamber=green, buy_now=magenta.
+- **Feedback buttons** (thumbs up/down) call `updateLogFeedback` from `firebase.ts` directly; optimistic local state, toggling the same value clears the feedback.
+- **`no-scan` CSS class** disables the `.tron-card::before` scan animation on high-volume elements (log items, skeletons) to avoid dozens of concurrent CSS animations.
+- **Loading skeleton** (`LogsSkeleton`) is shown while the first Firestore `onSnapshot` resolves, controlled by `logsInitialized` state.
+- **Empty logs state** is context-aware: different messages for "filter with no matches", "extension connected but no logs", and "extension not installed yet".
+- **Mobile layout**: the Install Extension card renders above the logs list on small screens (duplicated with `block lg:hidden` / `hidden lg:block`).
 
 ## Coding Conventions
 - Functional React components with hooks only

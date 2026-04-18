@@ -61,3 +61,24 @@ body {
   100% { transform: translateX(100%); }
 }
 
+/* Opt-out of scan animation for high-volume elements (log items, skeletons) */
+.no-scan::before {
+  animation: none;
+  display: none;
+}
+
+/* Styled scrollbar for the terminal panel */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 255, 0.25);
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 242, 255, 0.5);
+}
+

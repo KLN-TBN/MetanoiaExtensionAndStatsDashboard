@@ -4,112 +4,62 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { auth, signIn, signOut, getUserProfile, createUserProfile, updateSurveyResults, UserProfile, MaladyLog, db } from './firebase';
+import { auth, signIn, signOut, getUserProfile, createUserProfile, updateSurveyResults, updateLogFeedback, UserProfile, MaladyLog, db } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Zap, Target, Eye, ShoppingCart, LogOut, ChevronRight, ThumbsUp, ThumbsDown, HelpCircle, BarChart3, Clock, DollarSign, MessageSquare, AlertTriangle, Terminal, Download } from 'lucide-react';
+import { Shield, Zap, Target, Eye, LogOut, ThumbsUp, ThumbsDown, HelpCircle, BarChart3, Clock, DollarSign, AlertTriangle, Download } from 'lucide-react';
 import JSZip from 'jszip';
 
 const MALADIES = [
   {
     id: 'rabbit_hole',
     title: '🐇 Rabbit Hole',
-    description: '“I came here for one thing and now it’s two hours later. I feel like I’ve lost control of my time and attention.”',
+    description: '"I came here for one thing and now it\'s two hours later. I feel like I\'ve lost control of my time and attention."',
     metric: 'time_saved',
     metricLabel: 'Estimated Time Saved',
-    unit: 'min'
+    unit: 'min',
+    color: '#00f2ff'
   },
   {
     id: 'outrage_cycle',
     title: '😡 Outrage Cycle',
-    description: '“I feel baited into being angry. I’m constantly reacting to things that upset me, and it feels like the app is fueling my frustration.”',
+    description: '"I feel baited into being angry. I\'m constantly reacting to things that upset me, and it feels like the app is fueling my frustration."',
     metric: 'rage_avoided',
     metricLabel: 'Minutes of Rage Avoided',
-    unit: 'min'
+    unit: 'min',
+    color: '#ff4444'
   },
   {
     id: 'echo_chamber',
     title: '⛓️ Echo Chamber',
-    description: '“I feel stuck in a loop of the same ideas. My world feels smaller, and I’m only seeing information that confirms what I already believe.”',
+    description: '"I feel stuck in a loop of the same ideas. My world feels smaller, and I\'m only seeing information that confirms what I already believe."',
     metric: 'viewpoints',
     metricLabel: 'New Viewpoints Provided',
-    unit: 'pts'
+    unit: 'pts',
+    color: '#00ff00'
   },
   {
     id: 'buy_now',
     title: '⏰ Buy Now Reflex',
-    description: '“I feel an impulsive urge to click or buy. The interface is rushing me into decisions before I have a chance to think them through.”',
+    description: '"I feel an impulsive urge to click or buy. The interface is rushing me into decisions before I have a chance to think them through."',
     metric: 'money_saved',
     metricLabel: 'Estimated Money Saved',
-    unit: '$'
+    unit: '$',
+    color: '#ff00ff'
   }
 ];
+
+function getHostname(url: string): string {
+  try { return new URL(url).hostname; } catch { return url; }
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<MaladyLog[]>([]);
-  const [serverLogs, setServerLogs] = useState<{ message: string, type: 'log' | 'error', timestamp: number }[]>([]);
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const terminalEndRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let timeoutId: any = null;
-
-    const connect = () => {
-      setWsStatus('connecting');
-      const wsUrl = window.location.origin.replace(/^http/, 'ws') + '/ws';
-      ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        console.log('[Metanoia] WebSocket connected');
-        setWsStatus('connected');
-      };
-
-      ws.onmessage = (event) => {
-        console.log('[Metanoia] Received WS message:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'SERVER_LOG') {
-            setServerLogs(prev => [...prev.slice(-99), { 
-              message: data.message, 
-              type: data.logType, 
-              timestamp: Date.now() 
-            }]);
-          }
-        } catch (e) {
-          console.error('WS Error:', e);
-        }
-      };
-
-      ws.onclose = () => {
-        ws = null;
-        setWsStatus('disconnected');
-        timeoutId = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = () => {
-        ws?.close();
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
-      clearTimeout(timeoutId);
-    };
-  }, []);
-
-  useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [serverLogs]);
+  const [logsInitialized, setLogsInitialized] = useState(false);
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
@@ -117,14 +67,12 @@ export default function App() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // First check if profile exists, if not create it
         let p = await getUserProfile(u.uid);
         if (!p) {
           p = await createUserProfile(u);
         }
         setProfile(p);
 
-        // Then listen for real-time updates to the profile (stats, etc.)
         const { doc, onSnapshot } = await import('firebase/firestore');
         unsubscribeProfile = onSnapshot(doc(db, 'users', u.uid), (snapshot) => {
           if (snapshot.exists()) {
@@ -146,6 +94,7 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
+      setLogsInitialized(false);
       const q = query(
         collection(db, 'malady_logs'),
         where('uid', '==', user.uid),
@@ -155,6 +104,7 @@ export default function App() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const l = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MaladyLog));
         setLogs(l);
+        setLogsInitialized(true);
       });
       return unsubscribe;
     }
@@ -163,7 +113,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#050505]">
-        <motion.div 
+        <motion.div
           animate={{ rotate: 360 }}
           transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
           className="w-12 h-12 border-2 border-[#00f2ff] border-t-transparent rounded-full"
@@ -175,7 +125,7 @@ export default function App() {
   if (!user) return <Login />;
   if (!profile?.surveyResults || profile.surveyResults.length === 0) return <Survey uid={user.uid} onComplete={(res) => setProfile(prev => prev ? ({ ...prev, surveyResults: res }) : null)} />;
 
-  return <Dashboard profile={profile} logs={logs} serverLogs={serverLogs} terminalEndRef={terminalEndRef} wsStatus={wsStatus} />;
+  return <Dashboard user={user} profile={profile} logs={logs} logsInitialized={logsInitialized} />;
 }
 
 function Login() {
@@ -237,7 +187,7 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
         <h2 className="text-5xl font-bold tron-glow uppercase tracking-widest">Initial Assessment</h2>
         <p className="text-[#00f2ff]/60">Which of these scenarios do you relate to? (Select all that apply)</p>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
         {MALADIES.map((m) => (
           <motion.div
@@ -253,7 +203,7 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
         ))}
       </div>
 
-      <button 
+      <button
         onClick={handleComplete}
         disabled={selected.length === 0}
         className={`tron-button px-12 py-3 ${selected.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
@@ -264,24 +214,25 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
   );
 }
 
-function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: { 
-  profile: UserProfile, 
-  logs: MaladyLog[], 
-  serverLogs: { message: string, type: 'log' | 'error', timestamp: number }[],
-  terminalEndRef: React.RefObject<HTMLDivElement | null>,
-  wsStatus: 'connecting' | 'connected' | 'disconnected'
+function Dashboard({ user, profile, logs, logsInitialized }: {
+  user: User,
+  profile: UserProfile,
+  logs: MaladyLog[],
+  logsInitialized: boolean,
 }) {
   const [downloading, setDownloading] = useState(false);
   const [extensionConnected, setExtensionConnected] = useState(false);
+  const [logFilter, setLogFilter] = useState<string>('all');
 
-  // Auto-sync the extension whenever the dashboard loads with an authenticated user.
-  // The content script on this page listens for METANOIA_SYNC on window, so no
-  // button click is required — the user just needs the dashboard open while logged in.
-  useEffect(() => {
+  const syncWithExtension = () => {
     const appUrl = window.location.origin.replace(/\/$/, '');
     window.dispatchEvent(new CustomEvent('METANOIA_SYNC', {
       detail: { uid: profile.uid, appUrl }
     }));
+  };
+
+  useEffect(() => {
+    syncWithExtension();
   }, [profile.uid]);
 
   useEffect(() => {
@@ -330,12 +281,8 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
     }
   };
 
-  const syncWithExtension = () => {
-    const appUrl = window.location.origin.replace(/\/$/, '');
-    window.dispatchEvent(new CustomEvent('METANOIA_SYNC', {
-      detail: { uid: profile.uid, appUrl }
-    }));
-  };
+  const displayName = user.displayName || user.email || profile.uid.slice(0, 8) + '...';
+  const filteredLogs = logFilter === 'all' ? logs : logs.filter(l => l.maladyType === logFilter);
 
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto space-y-12">
@@ -343,13 +290,13 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
         <div className="flex items-center gap-4">
           <Shield className="w-10 h-10 text-[#00f2ff]" />
           <div>
-            <h1 className="text-5xl font-bold tracking-tighter tron-glow">METANOIA DASHBOARD</h1>
-            <p className="text-base text-[#00f2ff]/60">USER_ID: {profile.uid.slice(0, 8)}... | STATUS: ACTIVE</p>
+            <h1 className="text-5xl font-bold tracking-tighter tron-glow">METANOIA</h1>
+            <p className="text-base text-[#00f2ff]/60">{displayName}</p>
           </div>
         </div>
         <div className="flex gap-4 items-center">
-          <div className="hidden md:flex flex-col items-end mr-4">
-            <span className="text-sm uppercase tracking-widest text-[#00f2ff]/40 font-mono">Extension Status</span>
+          <div className="flex flex-col items-end mr-4">
+            <span className="text-sm uppercase tracking-widest text-[#00f2ff]/40 font-mono">Extension</span>
             <span className={`text-base font-mono ${extensionConnected ? 'text-green-400' : 'text-[#00f2ff]/40'}`}>
               {extensionConnected ? 'CONNECTED' : 'NOT CONNECTED'}
             </span>
@@ -362,151 +309,236 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard icon={<Clock />} label="Time Saved" value={profile.stats?.timeSaved || 0} unit="min" color="#00f2ff" />
-        <StatCard icon={<DollarSign />} label="Money Saved" value={profile.stats?.moneySaved || 0} unit="$" color="#ff00ff" />
-        <StatCard icon={<Eye />} label="Viewpoints" value={profile.stats?.viewpointsProvided || 0} unit="pts" color="#00ff00" />
+        <StatCard icon={<DollarSign />} label="Money Saved" value={profile.stats?.moneySaved || 0} prefix="$" color="#ff00ff" />
+        <StatCard icon={<Eye />} label="Viewpoints" value={profile.stats?.viewpointsProvided || 0} color="#00ff00" />
         <StatCard icon={<AlertTriangle />} label="Rage Avoided" value={profile.stats?.rageAvoided || 0} unit="min" color="#ff4444" />
+      </div>
+
+      {/* Install extension guide appears first on mobile for new users */}
+      <div className="block lg:hidden">
+        <InstallExtensionCard downloading={downloading} onDownload={downloadExtension} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          <h2 className="text-3xl font-bold flex items-center gap-2">
-            <BarChart3 className="w-5 h-5" /> PROTECTION LOGS
-          </h2>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <h2 className="text-3xl font-bold flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" /> PROTECTION LOGS
+            </h2>
+            <div className="flex gap-2 flex-wrap">
+              {['all', ...MALADIES.map(m => m.id)].map(id => {
+                const malady = MALADIES.find(m => m.id === id);
+                const label = id === 'all' ? 'ALL' : malady?.title.split(' ').slice(1).join(' ').toUpperCase() || id;
+                const color = malady?.color || '#00f2ff';
+                const active = logFilter === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setLogFilter(id)}
+                    className="px-3 py-1 text-xs uppercase tracking-widest border transition-all"
+                    style={{
+                      borderColor: active ? color : `${color}44`,
+                      color: active ? '#050505' : color,
+                      background: active ? color : 'transparent',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="space-y-4">
-            {logs.length === 0 ? (
-              <div className="tron-card text-center py-12 text-[#00f2ff]/40">
-                No threats detected yet. Continue browsing safely.
-              </div>
+            {!logsInitialized ? (
+              <LogsSkeleton />
+            ) : filteredLogs.length === 0 ? (
+              <EmptyLogsState hasFilter={logFilter !== 'all'} extensionConnected={extensionConnected} />
             ) : (
-              logs.map(log => <LogItem key={log.id} log={log} />)
+              filteredLogs.map(log => <LogItem key={log.id} log={log} />)
             )}
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="tron-card border-[#ff00ff]/50 bg-[#ff00ff]/5">
-            <h2 className="text-2xl font-bold flex items-center gap-2 text-[#ff00ff] mb-4">
-              <Zap className="w-5 h-5" /> INSTALL EXTENSION
-            </h2>
-            <div className="mb-4">
-              <button 
-                onClick={downloadExtension}
-                disabled={downloading}
-                className="tron-button w-full flex items-center justify-center gap-2 text-base border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10"
-              >
-                <Download className={`w-4 h-4 ${downloading ? 'animate-bounce' : ''}`} />
-                {downloading ? 'Preparing ZIP...' : 'Download Extension ZIP'}
-              </button>
-            </div>
-            <ol className="text-base space-y-3 text-[#ff00ff]/80 list-decimal pl-4">
-              <li>Download the extension source code above.</li>
-              <li>Unzip the file to a folder on your computer.</li>
-              <li>Open <code className="bg-black px-1">chrome://extensions</code> in Chrome.</li>
-              <li>Enable "Developer mode" (top right).</li>
-              <li>Click "Load unpacked" and select the unzipped folder.</li>
-              <li>Click "Sync Extension" above to link your account.</li>
-            </ol>
+          {/* Hidden on mobile since it rendered above */}
+          <div className="hidden lg:block">
+            <InstallExtensionCard downloading={downloading} onDownload={downloadExtension} />
           </div>
 
           <h2 className="text-3xl font-bold flex items-center gap-2">
             <Target className="w-5 h-5" /> PROTECTION FOCUS
           </h2>
           <div className="tron-card space-y-4">
-            {MALADIES.map(m => (
-              <div key={m.id} className={`flex items-center justify-between p-2 border-l-2 ${profile.surveyResults?.includes(m.id) ? 'border-[#00f2ff] bg-[#00f2ff]/5' : 'border-transparent opacity-40'}`}>
-                <span className="text-lg">{m.title}</span>
-                {profile.surveyResults?.includes(m.id) && <Zap className="w-4 h-4 text-[#00f2ff] animate-pulse" />}
-              </div>
-            ))}
-          </div>
-          
-          <div className="tron-card bg-magenta-900/10 border-[#ff00ff]/30">
-            <h3 className="text-lg font-bold text-[#ff00ff] mb-2 uppercase tracking-tighter">System Note</h3>
-            <p className="text-base text-[#ff00ff]/70 leading-relaxed">
-              Metanoia is learning from your feedback. Thumbs up/down on flagged content helps refine the detection algorithm for your specific triggers.
-            </p>
+            {MALADIES.map(m => {
+              const active = profile.surveyResults?.includes(m.id);
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between p-2 border-l-2 transition-all"
+                  style={{
+                    borderColor: active ? m.color : 'transparent',
+                    background: active ? `${m.color}0d` : 'transparent',
+                    opacity: active ? 1 : 0.3,
+                  }}
+                >
+                  <span className="text-lg" style={{ textDecoration: active ? 'none' : 'line-through' }}>{m.title}</span>
+                  {active && <Zap className="w-4 h-4 animate-pulse" style={{ color: m.color }} />}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="tron-card border-[#00f2ff]/50 bg-black/50 h-[300px] flex flex-col">
-            <h3 className="text-base font-bold text-[#00f2ff] mb-2 uppercase tracking-widest flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4" /> LIVE_TERMINAL_LOGS
-              </div>
-              <div className={`text-xs px-1 rounded ${
-                wsStatus === 'connected' ? 'bg-green-500/20 text-green-400' : 
-                wsStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-400 animate-pulse' : 
-                'bg-red-500/20 text-red-400'
-              }`}>
-                {wsStatus.toUpperCase()}
-              </div>
-            </h3>
-            <div className="flex-1 overflow-y-auto font-mono text-sm space-y-1 custom-scrollbar pr-2">
-              {serverLogs.length === 0 && <div className="text-[#00f2ff]/20 italic">Waiting for system activity...</div>}
-              {serverLogs.map((log, i) => (
-                <div key={i} className={`${log.type === 'error' ? 'text-red-400' : 'text-[#00f2ff]/80'}`}>
-                  <span className="opacity-30">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span> {log.message}
-                </div>
-              ))}
-              <div ref={terminalEndRef} />
-            </div>
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
+function InstallExtensionCard({ downloading, onDownload }: { downloading: boolean, onDownload: () => void }) {
+  return (
+    <div className="tron-card border-[#ff00ff]/50 bg-[#ff00ff]/5">
+      <h2 className="text-2xl font-bold flex items-center gap-2 text-[#ff00ff] mb-4">
+        <Zap className="w-5 h-5" /> INSTALL EXTENSION
+      </h2>
+      <div className="mb-4">
+        <button
+          onClick={onDownload}
+          disabled={downloading}
+          className="tron-button w-full flex items-center justify-center gap-2 text-base border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10"
+        >
+          <Download className={`w-4 h-4 ${downloading ? 'animate-bounce' : ''}`} />
+          {downloading ? 'Preparing ZIP...' : 'Download Extension ZIP'}
+        </button>
+      </div>
+      <ol className="text-base space-y-3 text-[#ff00ff]/80 list-decimal pl-4">
+        <li>Download the extension source code above.</li>
+        <li>Unzip the file to a folder on your computer.</li>
+        <li>Open <code className="bg-black px-1">chrome://extensions</code> in Chrome.</li>
+        <li>Enable "Developer mode" (top right).</li>
+        <li>Click "Load unpacked" and select the unzipped folder.</li>
+        <li>Open any webpage — the extension will activate automatically.</li>
+      </ol>
+    </div>
+  );
+}
 
-function StatCard({ icon, label, value, unit, color }: { icon: React.ReactNode, label: string, value: number, unit: string, color: string }) {
+function StatCard({ icon, label, value, unit, prefix, color }: { icon: React.ReactNode, label: string, value: number, unit?: string, prefix?: string, color: string }) {
+  const rounded = Math.round(value);
   return (
     <div className="tron-card" style={{ borderColor: `${color}44` }}>
       <div className="flex items-center gap-3 mb-4 opacity-70" style={{ color }}>
         {icon}
         <span className="text-base uppercase tracking-widest">{label}</span>
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-6xl font-bold tron-glow" style={{ color }}>{value}</span>
-        <span className="text-base opacity-50">{unit}</span>
+      <div className="flex items-baseline gap-1">
+        {prefix && <span className="text-3xl font-bold opacity-70" style={{ color }}>{prefix}</span>}
+        <motion.span
+          key={rounded}
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-6xl font-bold tron-glow"
+          style={{ color }}
+        >
+          {rounded}
+        </motion.span>
+        {unit && <span className="text-base opacity-50 ml-1">{unit}</span>}
       </div>
     </div>
   );
 }
 
-function LogItem({ log }: { log: MaladyLog, key?: string }) {
+function EmptyLogsState({ hasFilter, extensionConnected }: { hasFilter: boolean, extensionConnected: boolean }) {
+  const message = hasFilter
+    ? 'No detections match this filter.'
+    : extensionConnected
+      ? 'All clear — no patterns detected yet. Keep browsing normally.'
+      : 'Install the extension above to start detecting patterns while you browse.';
 
-  const malady = MALADIES.find(m => m.id === log.maladyType);
-  
   return (
-    <motion.div 
+    <div className="tron-card no-scan text-center py-12 text-[#00f2ff]/40">
+      <motion.div
+        animate={{ scale: [1, 1.08, 1] }}
+        transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+        className="inline-block mb-4"
+      >
+        <Shield className="w-12 h-12 mx-auto opacity-30" />
+      </motion.div>
+      <p>{message}</p>
+    </div>
+  );
+}
+
+function LogsSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map(i => (
+        <div key={i} className="tron-card no-scan animate-pulse space-y-3">
+          <div className="h-4 bg-[#00f2ff]/10 rounded w-1/3" />
+          <div className="h-3 bg-[#00f2ff]/10 rounded w-1/2" />
+          <div className="h-3 bg-[#00f2ff]/10 rounded w-full" />
+          <div className="h-3 bg-[#00f2ff]/10 rounded w-5/6" />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function LogItem({ log }: { log: MaladyLog, key?: React.Key }) {
+  const malady = MALADIES.find(m => m.id === log.maladyType);
+  const color = malady?.color || '#00f2ff';
+  const [feedback, setFeedback] = useState<'up' | 'down' | null | undefined>(log.feedback);
+  const [expanded, setExpanded] = useState(false);
+  const isLong = log.flaggedText.length > 150;
+  const displayText = expanded || !isLong ? log.flaggedText : log.flaggedText.slice(0, 150) + '...';
+
+  const handleFeedback = async (val: 'up' | 'down') => {
+    if (!log.id) return;
+    const next = feedback === val ? null : val;
+    setFeedback(next);
+    if (next) await updateLogFeedback(log.id, next);
+  };
+
+  return (
+    <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="tron-card group"
+      className="tron-card no-scan group"
+      style={{ borderLeftColor: color, borderLeftWidth: '3px' }}
     >
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="font-bold text-[#00f2ff]">{malady?.title || log.maladyType}</h3>
+          <h3 className="font-bold" style={{ color }}>{malady?.title || log.maladyType}</h3>
           <p className="text-sm text-[#00f2ff]/40 uppercase tracking-tighter">
-            {log.timestamp.toDate().toLocaleString()} | {new URL(log.url).hostname}
+            {log.timestamp.toDate().toLocaleString()} | {getHostname(log.url)}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-base font-bold px-2 py-1 border border-[#00f2ff]/30 rounded">
-            +{log.metricValue} {malady?.unit}
+            {malady?.unit === '$' ? `+$${Math.round(log.metricValue)}` : `+${Math.round(log.metricValue)} ${malady?.unit ?? ''}`}
           </span>
         </div>
       </div>
-      
-      <p className="text-lg text-[#00f2ff]/80 mb-4 border-l border-[#00f2ff]/20 pl-4 italic">
-        "{log.flaggedText.slice(0, 150)}..."
+
+      <p className="text-lg text-[#00f2ff]/80 mb-2 border-l border-[#00f2ff]/20 pl-4 italic">
+        "{displayText}"
       </p>
-      
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="text-xs text-[#00f2ff]/50 hover:text-[#00f2ff] uppercase tracking-widest mb-4 pl-4 transition-colors"
+        >
+          {expanded ? 'show less' : 'show more'}
+        </button>
+      )}
+
       {log.counterPerspective && (
         <div className="mb-4 p-3 bg-[#00ff00]/5 border-l-2 border-[#00ff00] rounded-r">
           <div className="text-sm uppercase tracking-widest text-[#00ff00] font-bold mb-1">Counter Perspective</div>
           <p className="text-base text-[#00ff00]/80 italic">{log.counterPerspective}</p>
         </div>
       )}
-      
+
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1 text-base text-[#00f2ff]/60">
@@ -515,10 +547,18 @@ function LogItem({ log }: { log: MaladyLog, key?: string }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className={`p-1 rounded transition-colors ${log.feedback === 'up' ? 'bg-[#00f2ff] text-[#050505]' : 'hover:bg-[#00f2ff]/20'}`}>
+          <button
+            onClick={() => handleFeedback('up')}
+            className={`p-1 rounded transition-colors ${feedback === 'up' ? 'bg-[#00f2ff] text-[#050505]' : 'hover:bg-[#00f2ff]/20'}`}
+            aria-label="Helpful"
+          >
             <ThumbsUp className="w-4 h-4" />
           </button>
-          <button className={`p-1 rounded transition-colors ${log.feedback === 'down' ? 'bg-[#ff4444] text-[#050505]' : 'hover:bg-[#ff4444]/20'}`}>
+          <button
+            onClick={() => handleFeedback('down')}
+            className={`p-1 rounded transition-colors ${feedback === 'down' ? 'bg-[#ff4444] text-[#050505]' : 'hover:bg-[#ff4444]/20'}`}
+            aria-label="Not helpful"
+          >
             <ThumbsDown className="w-4 h-4" />
           </button>
         </div>
@@ -526,4 +566,3 @@ function LogItem({ log }: { log: MaladyLog, key?: string }) {
     </motion.div>
   );
 }
-
