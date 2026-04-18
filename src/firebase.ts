@@ -17,10 +17,10 @@ export interface UserProfile {
   surveyResults?: string[];
   protectionProfile?: Record<string, number>;
   stats?: {
-    timeSaved: number;
-    moneySaved: number;
-    viewpointsProvided: number;
-    rageAvoided: number;
+    timeSaves: number;
+    moneySaves: number;
+    echoSaves: number;
+    rageSaves: number;
   };
 }
 
@@ -48,10 +48,10 @@ export const createUserProfile = async (user: FirebaseUser) => {
     uid: user.uid,
     email: user.email || '',
     stats: {
-      timeSaved: 0,
-      moneySaved: 0,
-      viewpointsProvided: 0,
-      rageAvoided: 0
+      timeSaves: 0,
+      moneySaves: 0,
+      echoSaves: 0,
+      rageSaves: 0
     }
   };
   await setDoc(doc(db, 'users', user.uid), profile);
@@ -71,12 +71,12 @@ export const logMalady = async (log: Omit<MaladyLog, 'timestamp'>) => {
   const userSnap = await getDoc(userRef);
   if (userSnap.exists()) {
     const userData = userSnap.data() as UserProfile;
-    const stats = userData.stats || { timeSaved: 0, moneySaved: 0, viewpointsProvided: 0, rageAvoided: 0 };
-    
-    if (log.metricType === 'time_saved') stats.timeSaved += log.metricValue;
-    if (log.metricType === 'money_saved') stats.moneySaved += log.metricValue;
-    if (log.metricType === 'viewpoints') stats.viewpointsProvided += log.metricValue;
-    if (log.metricType === 'rage_avoided') stats.rageAvoided += log.metricValue;
+    const stats = userData.stats || { timeSaves: 0, moneySaves: 0, echoSaves: 0, rageSaves: 0 };
+
+    if (log.metricType === 'time_saved') stats.timeSaves = (stats.timeSaves || 0) + 1;
+    if (log.metricType === 'money_saved') stats.moneySaves = (stats.moneySaves || 0) + 1;
+    if (log.metricType === 'viewpoints') stats.echoSaves = (stats.echoSaves || 0) + 1;
+    if (log.metricType === 'rage_avoided') stats.rageSaves = (stats.rageSaves || 0) + 1;
     
     await updateDoc(userRef, { stats });
   }

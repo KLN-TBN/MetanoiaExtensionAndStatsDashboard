@@ -308,10 +308,10 @@ function Dashboard({ user, profile, logs, logsInitialized }: {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard icon={<Clock />} label="Time Saved" value={profile.stats?.timeSaved || 0} unit="min" color="#00f2ff" />
-        <StatCard icon={<DollarSign />} label="Money Saved" value={profile.stats?.moneySaved || 0} prefix="$" color="#ff00ff" />
-        <StatCard icon={<Eye />} label="Viewpoints" value={profile.stats?.viewpointsProvided || 0} color="#00ff00" />
-        <StatCard icon={<AlertTriangle />} label="Rage Avoided" value={profile.stats?.rageAvoided || 0} unit="min" color="#ff4444" />
+        <StatCard icon={<Clock />} label="Time Saves" value={profile.stats?.timeSaves || 0} color="#00f2ff" />
+        <StatCard icon={<DollarSign />} label="Money Saves" value={profile.stats?.moneySaves || 0} color="#ff00ff" />
+        <StatCard icon={<Eye />} label="Echo Saves" value={profile.stats?.echoSaves || 0} color="#00ff00" />
+        <StatCard icon={<AlertTriangle />} label="Rage Saves" value={profile.stats?.rageSaves || 0} color="#ff4444" />
       </div>
 
       {/* Install extension guide appears first on mobile for new users */}

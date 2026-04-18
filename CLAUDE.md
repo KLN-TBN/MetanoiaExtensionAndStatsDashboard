@@ -11,6 +11,8 @@ Metanoia is a digital wellness platform consisting of a Chrome extension and a w
 - `npm run lint` — TypeScript type checking (`tsc --noEmit`)
 - `npm run start` — Same as `dev`, uses `tsx server.ts`
 
+**Note:** `tsx server.ts` does **not** hot-reload. Changes to `server.ts` require a manual server restart (`Ctrl+C` then `npm run dev`). To enable auto-restart on save during development, use `tsx watch server.ts` instead.
+
 **Environment:** Requires `GEMINI_API_KEY` (or `GOOGLE_API_KEY` or `API_KEY`) in `.env.local`. Firebase config is in `firebase-applet-config.json` (not `.env`).
 
 ## Architecture
@@ -69,6 +71,39 @@ The extension sends `REQUEST_SYNC` via `window.postMessage`; the dashboard liste
 - **Loading skeleton** (`LogsSkeleton`) is shown while the first Firestore `onSnapshot` resolves, controlled by `logsInitialized` state.
 - **Empty logs state** is context-aware: different messages for "filter with no matches", "extension connected but no logs", and "extension not installed yet".
 - **Mobile layout**: the Install Extension card renders above the logs list on small screens (duplicated with `block lg:hidden` / `hidden lg:block`).
+
+## Deployment
+
+### Live Service
+- **URL:** https://metanoia-stats-dashboard-797861117032.us-west1.run.app
+- **GCP Project ID:** `gen-lang-client-0757426625`
+- **Cloud Run service name:** `metanoia-stats-dashboard`
+- **Region:** `us-west1`
+- **Container image:** `gcr.io/gen-lang-client-0757426625/metanoia-dashboard`
+
+### Environment Variables on Cloud Run
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `APP_URL` | The live service URL (used by dashboard to sync extension) |
+
+Firebase Admin SDK uses ADC (no credentials file needed — Cloud Run's service account handles it). Ensure the service account `797861117032-compute@developer.gserviceaccount.com` has the `Cloud Datastore User` role in IAM.
+
+### To Redeploy
+Run these commands from the `MetanoiaExtensionAndStatsDashboard/` directory:
+
+```bash
+# 1. Build and push image
+gcloud builds submit --tag gcr.io/gen-lang-client-0757426625/metanoia-dashboard
+
+# 2. Deploy to Cloud Run
+gcloud run deploy metanoia-stats-dashboard --image gcr.io/gen-lang-client-0757426625/metanoia-dashboard --platform managed --region us-west1 --allow-unauthenticated --set-env-vars "GEMINI_API_KEY=YOUR_GEMINI_KEY,APP_URL=https://metanoia-stats-dashboard-797861117032.us-west1.run.app"
+```
+
+### Notes
+- `server.ts` reads `process.env.PORT` — Cloud Run injects `PORT=8080`
+- `background.js` does NOT hardcode the API URL — it receives it from the dashboard via `chrome.storage` on sync
+- The Dockerfile does a two-stage build: Stage 1 runs `npm run build` (React/Vite), Stage 2 runs the Express server
 
 ## Coding Conventions
 - Functional React components with hooks only

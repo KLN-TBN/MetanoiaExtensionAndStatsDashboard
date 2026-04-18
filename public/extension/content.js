@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // --- Constants ---
-const SCAN_DELAY = 10000;
+const SCAN_DELAY = 1000;
 const EXCLUDED_DOMAINS = [
   'localhost',
   'ais-dev',
@@ -239,6 +239,13 @@ function scrollToMalady(type) {
 
   const target = markers[idx];
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Auto-show popover for the scrolled-to marker
+  const popover = target.querySelector('.metanoia-popover');
+  if (popover) {
+    popover.classList.add('open');
+    setTimeout(() => popover.classList.remove('open'), 3000);
+  }
 
   // Flash the dot to confirm which one was jumped to
   const dot = target.querySelector('.metanoia-dot');

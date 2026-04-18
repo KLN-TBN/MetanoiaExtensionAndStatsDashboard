@@ -21,7 +21,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   const wss = new WebSocketServer({ noServer: true });
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000", 10);
 
   // Wrap console.log and console.error early
   const originalLog = console.log;
@@ -201,16 +201,25 @@ async function startServer() {
       });
       console.log(`[Metanoia Server] Found ${maladies.length} verified maladies (${rawMaladies.length} raw from Gemini).`);
 
+      // Deterministic metricType mapping — don't rely on Gemini to include it
+      const MALADY_METRIC_TYPE: Record<string, string> = {
+        rabbit_hole: 'time_saved',
+        outrage_cycle: 'rage_avoided',
+        echo_chamber: 'viewpoints',
+        buy_now: 'money_saved'
+      };
+
       // Log maladies to Firestore using Admin SDK
       if (maladies.length > 0 && userId) {
         for (const malady of maladies) {
           try {
+            const metricType = MALADY_METRIC_TYPE[malady.maladyType] || 'none';
             const logData = {
               uid: userId,
               maladyType: malady.maladyType,
               explanation: malady.explanation,
               metricValue: malady.metricValue || 0,
-              metricType: malady.metricType || 'none',
+              metricType,
               url: url || 'unknown',
               flaggedText: malady.flaggedText,
               counterPerspective: malady.counterPerspective || null,
@@ -219,19 +228,19 @@ async function startServer() {
             const docRef = await db.collection('malady_logs').add(logData);
             malady.logId = docRef.id;
             
-            // Update user stats only if metricValue exists and is positive
-            if (malady.metricValue && malady.metricValue > 0) {
+            // Update user stats — metricType is always set from MALADY_METRIC_TYPE above
+            if (metricType !== 'none') {
               const userRef = db.collection('users').doc(userId);
               const userSnap = await userRef.get();
               if (userSnap.exists) {
                 const userData = userSnap.data() || {};
-                const stats = userData.stats || { timeSaved: 0, moneySaved: 0, viewpointsProvided: 0, rageAvoided: 0 };
-                
-                if (malady.metricType === 'time_saved') stats.timeSaved += malady.metricValue;
-                if (malady.metricType === 'money_saved') stats.moneySaved += malady.metricValue;
-                if (malady.metricType === 'viewpoints') stats.viewpointsProvided += malady.metricValue;
-                if (malady.metricType === 'rage_avoided') stats.rageAvoided += malady.metricValue;
-                
+                const stats = userData.stats || { timeSaves: 0, moneySaves: 0, echoSaves: 0, rageSaves: 0 };
+
+                if (metricType === 'time_saved') stats.timeSaves = (stats.timeSaves || 0) + 1;
+                if (metricType === 'money_saved') stats.moneySaves = (stats.moneySaves || 0) + 1;
+                if (metricType === 'viewpoints') stats.echoSaves = (stats.echoSaves || 0) + 1;
+                if (metricType === 'rage_avoided') stats.rageSaves = (stats.rageSaves || 0) + 1;
+
                 await userRef.update({ stats });
               }
             }
