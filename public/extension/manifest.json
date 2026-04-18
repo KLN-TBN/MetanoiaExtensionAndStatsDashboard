@@ -5,6 +5,7 @@
   "description": "Protect your attention from digital maladies.",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": [
+    "http://localhost:3000/*",
     "https://ais-dev-gv2ftlzgqxz6yb5q7t2w5y-423445672267.europe-west2.run.app/*",
     "https://metanoia-stats-dashboard-797861117032.us-west1.run.app/*"
   ],

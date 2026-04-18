@@ -62,9 +62,11 @@ async function startServer() {
   // Initialize Firebase Admin
   console.log("[Metanoia Server] Initializing Firebase Admin...");
   try {
-    initializeApp({
-      projectId: firebaseConfig.projectId,
-    });
+    const adminConfig: any = { projectId: firebaseConfig.projectId };
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      adminConfig.credential = cert(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    }
+    initializeApp(adminConfig);
     console.log("[Metanoia Server] Firebase Admin initialized.");
   } catch (err) {
     console.error("[Metanoia Server] Firebase Admin Init Error:", err);
@@ -186,9 +188,19 @@ async function startServer() {
         config: { responseMimeType: "application/json" }
       });
 
-      const maladies = JSON.parse(response.text);
-      console.log(`[Metanoia Server] Found ${maladies.length} maladies.`);
-      
+      const rawMaladies = JSON.parse(response.text);
+      const VALID_TYPES = new Set(['rabbit_hole', 'outrage_cycle', 'echo_chamber', 'buy_now']);
+      const normalizedSource = text.toLowerCase().replace(/\s+/g, ' ');
+      const maladies = rawMaladies.filter((m: any) => {
+        if (!VALID_TYPES.has(m.maladyType)) return false;
+        if (!m.flaggedText) return false;
+        const normalizedFlagged = m.flaggedText.toLowerCase().trim().replace(/\s+/g, ' ');
+        const found = normalizedSource.includes(normalizedFlagged);
+        if (!found) console.warn(`[Metanoia Server] Discarding malady — flaggedText not found in source: "${m.flaggedText}"`);
+        return found;
+      });
+      console.log(`[Metanoia Server] Found ${maladies.length} verified maladies (${rawMaladies.length} raw from Gemini).`);
+
       // Log maladies to Firestore using Admin SDK
       if (maladies.length > 0 && userId) {
         for (const malady of maladies) {
@@ -223,8 +235,8 @@ async function startServer() {
                 await userRef.update({ stats });
               }
             }
-          } catch (logError) {
-            console.error("[Metanoia Server] Firestore Log Error:", logError);
+          } catch (logError: any) {
+            console.error("[Metanoia Server] Firestore Log Error:", logError?.message || logError?.code || JSON.stringify(logError));
           }
         }
       }

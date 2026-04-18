@@ -295,7 +295,26 @@ async function performScan() {
     return;
   }
 
-  const rawText = document.body.innerText.slice(0, 5000).trim().replace(/\s+/g, ' ');
+  const rawText = (() => {
+    const buffer = window.innerHeight * 1.5;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    const parts = [];
+    let el;
+    while ((el = walker.nextNode())) {
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+      const rect = el.getBoundingClientRect();
+      // rect.width === 0 catches display:none children and zero-size containers
+      if (rect.width === 0 || rect.top > window.innerHeight + buffer || rect.bottom < -buffer) continue;
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          const text = child.textContent.trim();
+          if (text) parts.push(text);
+        }
+      }
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').slice(0, 5000);
+  })();
   // Normalize numbers only for change-detection — NOT for the API payload,
   // otherwise Gemini returns flaggedText with '#' that can't be found in the DOM.
   const normalizedForComparison = rawText.replace(/\d+/g, '#');
@@ -408,7 +427,17 @@ function normToRawIndex(rawStr, normIndex) {
 function injectGutterMarker(malady) {
   // Normalize target the same way rawText was normalized before sending to Gemini
   const targetText = malady.flaggedText.toLowerCase().trim().replace(/\s+/g, ' ');
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let el = node.parentElement;
+      while (el) {
+        if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+        el = el.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
   let node;
   let injected = false;
 
@@ -513,25 +542,19 @@ function attachMarker(malady, block, highlight) {
   activeMaladyCount++;
 
   const popover = marker.querySelector('.metanoia-popover');
-  let hideTimer = null;
 
-  const showPopover = () => {
-    clearTimeout(hideTimer);
-    popover.style.display = 'block';
+  // Show on hover, persist until the user clicks ×
+  marker.addEventListener('mouseenter', () => {
+    if (popover.classList.contains('open')) return; // already open, skip reflow
+    popover.style.left = '18px';
+    popover.style.right = '';
+    popover.classList.add('open');
     const rect = popover.getBoundingClientRect();
     if (rect.right > window.innerWidth - 20) {
       popover.style.left = 'auto';
       popover.style.right = '18px';
     }
-  };
-  const scheduleHide = () => {
-    hideTimer = setTimeout(() => { popover.style.display = 'none'; }, 120);
-  };
-
-  marker.addEventListener('mouseenter', showPopover);
-  marker.addEventListener('mouseleave', scheduleHide);
-  popover.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-  popover.addEventListener('mouseleave', scheduleHide);
+  });
 
   marker.querySelector('.metanoia-dismiss').addEventListener('click', (e) => {
     e.stopPropagation();

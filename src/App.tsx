@@ -212,7 +212,7 @@ function Login() {
         <button onClick={handleSignIn} className="tron-button px-12 py-4 text-xl">
           Login
         </button>
-        {error && <p className="text-red-400 text-sm max-w-md mx-auto">{error}</p>}
+        {error && <p className="text-red-400 text-base max-w-md mx-auto">{error}</p>}
       </motion.div>
     </div>
   );
@@ -234,7 +234,7 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 max-w-4xl mx-auto space-y-8">
       <div className="text-center space-y-4">
-        <h2 className="text-3xl font-bold tron-glow uppercase tracking-widest">Initial Assessment</h2>
+        <h2 className="text-5xl font-bold tron-glow uppercase tracking-widest">Initial Assessment</h2>
         <p className="text-[#00f2ff]/60">Which of these scenarios do you relate to? (Select all that apply)</p>
       </div>
       
@@ -247,8 +247,8 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
             onClick={() => toggle(m.id)}
             className={`tron-card cursor-pointer transition-all ${selected.includes(m.id) ? 'bg-[#00f2ff]/20 border-[#00f2ff]' : 'opacity-60'}`}
           >
-            <h3 className="text-xl font-bold mb-2">{m.title}</h3>
-            <p className="text-sm text-[#00f2ff]/80 italic">{m.description}</p>
+            <h3 className="text-3xl font-bold mb-2">{m.title}</h3>
+            <p className="text-lg text-[#00f2ff]/80 italic">{m.description}</p>
           </motion.div>
         ))}
       </div>
@@ -343,18 +343,18 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
         <div className="flex items-center gap-4">
           <Shield className="w-10 h-10 text-[#00f2ff]" />
           <div>
-            <h1 className="text-3xl font-bold tracking-tighter tron-glow">METANOIA DASHBOARD</h1>
-            <p className="text-xs text-[#00f2ff]/60">USER_ID: {profile.uid.slice(0, 8)}... | STATUS: ACTIVE</p>
+            <h1 className="text-5xl font-bold tracking-tighter tron-glow">METANOIA DASHBOARD</h1>
+            <p className="text-base text-[#00f2ff]/60">USER_ID: {profile.uid.slice(0, 8)}... | STATUS: ACTIVE</p>
           </div>
         </div>
         <div className="flex gap-4 items-center">
           <div className="hidden md:flex flex-col items-end mr-4">
-            <span className="text-[10px] uppercase tracking-widest text-[#00f2ff]/40 font-mono">Extension Status</span>
-            <span className={`text-xs font-mono ${extensionConnected ? 'text-green-400' : 'text-[#00f2ff]/40'}`}>
+            <span className="text-sm uppercase tracking-widest text-[#00f2ff]/40 font-mono">Extension Status</span>
+            <span className={`text-base font-mono ${extensionConnected ? 'text-green-400' : 'text-[#00f2ff]/40'}`}>
               {extensionConnected ? 'CONNECTED' : 'NOT CONNECTED'}
             </span>
           </div>
-          <button onClick={signOut} className="tron-button flex items-center gap-2 text-xs">
+          <button onClick={signOut} className="tron-button flex items-center gap-2 text-base">
             <LogOut className="w-4 h-4" /> Disconnect
           </button>
         </div>
@@ -369,7 +369,7 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          <h2 className="text-xl font-bold flex items-center gap-2">
+          <h2 className="text-3xl font-bold flex items-center gap-2">
             <BarChart3 className="w-5 h-5" /> PROTECTION LOGS
           </h2>
           <div className="space-y-4">
@@ -385,20 +385,20 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
 
         <div className="space-y-6">
           <div className="tron-card border-[#ff00ff]/50 bg-[#ff00ff]/5">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-[#ff00ff] mb-4">
+            <h2 className="text-2xl font-bold flex items-center gap-2 text-[#ff00ff] mb-4">
               <Zap className="w-5 h-5" /> INSTALL EXTENSION
             </h2>
             <div className="mb-4">
               <button 
                 onClick={downloadExtension}
                 disabled={downloading}
-                className="tron-button w-full flex items-center justify-center gap-2 text-xs border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10"
+                className="tron-button w-full flex items-center justify-center gap-2 text-base border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10"
               >
                 <Download className={`w-4 h-4 ${downloading ? 'animate-bounce' : ''}`} />
                 {downloading ? 'Preparing ZIP...' : 'Download Extension ZIP'}
               </button>
             </div>
-            <ol className="text-xs space-y-3 text-[#ff00ff]/80 list-decimal pl-4">
+            <ol className="text-base space-y-3 text-[#ff00ff]/80 list-decimal pl-4">
               <li>Download the extension source code above.</li>
               <li>Unzip the file to a folder on your computer.</li>
               <li>Open <code className="bg-black px-1">chrome://extensions</code> in Chrome.</li>
@@ -408,31 +408,31 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
             </ol>
           </div>
 
-          <h2 className="text-xl font-bold flex items-center gap-2">
+          <h2 className="text-3xl font-bold flex items-center gap-2">
             <Target className="w-5 h-5" /> PROTECTION FOCUS
           </h2>
           <div className="tron-card space-y-4">
             {MALADIES.map(m => (
               <div key={m.id} className={`flex items-center justify-between p-2 border-l-2 ${profile.surveyResults?.includes(m.id) ? 'border-[#00f2ff] bg-[#00f2ff]/5' : 'border-transparent opacity-40'}`}>
-                <span className="text-sm">{m.title}</span>
+                <span className="text-lg">{m.title}</span>
                 {profile.surveyResults?.includes(m.id) && <Zap className="w-4 h-4 text-[#00f2ff] animate-pulse" />}
               </div>
             ))}
           </div>
           
           <div className="tron-card bg-magenta-900/10 border-[#ff00ff]/30">
-            <h3 className="text-sm font-bold text-[#ff00ff] mb-2 uppercase tracking-tighter">System Note</h3>
-            <p className="text-xs text-[#ff00ff]/70 leading-relaxed">
+            <h3 className="text-lg font-bold text-[#ff00ff] mb-2 uppercase tracking-tighter">System Note</h3>
+            <p className="text-base text-[#ff00ff]/70 leading-relaxed">
               Metanoia is learning from your feedback. Thumbs up/down on flagged content helps refine the detection algorithm for your specific triggers.
             </p>
           </div>
 
           <div className="tron-card border-[#00f2ff]/50 bg-black/50 h-[300px] flex flex-col">
-            <h3 className="text-xs font-bold text-[#00f2ff] mb-2 uppercase tracking-widest flex items-center justify-between">
+            <h3 className="text-base font-bold text-[#00f2ff] mb-2 uppercase tracking-widest flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4" /> LIVE_TERMINAL_LOGS
               </div>
-              <div className={`text-[8px] px-1 rounded ${
+              <div className={`text-xs px-1 rounded ${
                 wsStatus === 'connected' ? 'bg-green-500/20 text-green-400' : 
                 wsStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-400 animate-pulse' : 
                 'bg-red-500/20 text-red-400'
@@ -440,7 +440,7 @@ function Dashboard({ profile, logs, serverLogs, terminalEndRef, wsStatus }: {
                 {wsStatus.toUpperCase()}
               </div>
             </h3>
-            <div className="flex-1 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar pr-2">
+            <div className="flex-1 overflow-y-auto font-mono text-sm space-y-1 custom-scrollbar pr-2">
               {serverLogs.length === 0 && <div className="text-[#00f2ff]/20 italic">Waiting for system activity...</div>}
               {serverLogs.map((log, i) => (
                 <div key={i} className={`${log.type === 'error' ? 'text-red-400' : 'text-[#00f2ff]/80'}`}>
@@ -462,11 +462,11 @@ function StatCard({ icon, label, value, unit, color }: { icon: React.ReactNode, 
     <div className="tron-card" style={{ borderColor: `${color}44` }}>
       <div className="flex items-center gap-3 mb-4 opacity-70" style={{ color }}>
         {icon}
-        <span className="text-xs uppercase tracking-widest">{label}</span>
+        <span className="text-base uppercase tracking-widest">{label}</span>
       </div>
       <div className="flex items-baseline gap-2">
-        <span className="text-4xl font-bold tron-glow" style={{ color }}>{value}</span>
-        <span className="text-xs opacity-50">{unit}</span>
+        <span className="text-6xl font-bold tron-glow" style={{ color }}>{value}</span>
+        <span className="text-base opacity-50">{unit}</span>
       </div>
     </div>
   );
@@ -485,31 +485,31 @@ function LogItem({ log }: { log: MaladyLog, key?: string }) {
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="font-bold text-[#00f2ff]">{malady?.title || log.maladyType}</h3>
-          <p className="text-[10px] text-[#00f2ff]/40 uppercase tracking-tighter">
+          <p className="text-sm text-[#00f2ff]/40 uppercase tracking-tighter">
             {log.timestamp.toDate().toLocaleString()} | {new URL(log.url).hostname}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold px-2 py-1 border border-[#00f2ff]/30 rounded">
+          <span className="text-base font-bold px-2 py-1 border border-[#00f2ff]/30 rounded">
             +{log.metricValue} {malady?.unit}
           </span>
         </div>
       </div>
       
-      <p className="text-sm text-[#00f2ff]/80 mb-4 border-l border-[#00f2ff]/20 pl-4 italic">
+      <p className="text-lg text-[#00f2ff]/80 mb-4 border-l border-[#00f2ff]/20 pl-4 italic">
         "{log.flaggedText.slice(0, 150)}..."
       </p>
       
       {log.counterPerspective && (
         <div className="mb-4 p-3 bg-[#00ff00]/5 border-l-2 border-[#00ff00] rounded-r">
-          <div className="text-[10px] uppercase tracking-widest text-[#00ff00] font-bold mb-1">Counter Perspective</div>
-          <p className="text-xs text-[#00ff00]/80 italic">{log.counterPerspective}</p>
+          <div className="text-sm uppercase tracking-widest text-[#00ff00] font-bold mb-1">Counter Perspective</div>
+          <p className="text-base text-[#00ff00]/80 italic">{log.counterPerspective}</p>
         </div>
       )}
       
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-xs text-[#00f2ff]/60">
+          <div className="flex items-center gap-1 text-base text-[#00f2ff]/60">
             <HelpCircle className="w-3 h-3" />
             <span>{log.explanation}</span>
           </div>
