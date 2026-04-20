@@ -59,7 +59,7 @@ The extension sends `REQUEST_SYNC` via `window.postMessage`; the dashboard liste
 - **Counter Perspective:** Alternative viewpoint provided only for `echo_chamber` maladies
 - **Sync:** Linking the extension to the dashboard via Firebase UID — also syncs `enabledMaladies` and `displayName`
 - **Personalized scanning:** The Gemini prompt is built dynamically from the user's `surveyResults` (stored as `enabledMaladies` in Chrome storage) — only enabled types are ever detected
-- **Image scanning:** When `lust_trigger` is enabled, `content.js` extracts visible `<img>` URLs (>100×100px) and the server makes a separate multimodal Gemini call; flagged images are blurred in the DOM
+- **Image scanning:** When `lust_trigger` is enabled, `content.js` extracts up to 8 images strictly visible in the current viewport, ranked by visible area (largest/most prominent first). The server fetches each image, base64-encodes it, and makes a multimodal Gemini call. Flagged images are blurred in the DOM and get the same M dot + popover as text detections. Image maladies are logged to Firestore with a `logId` so feedback buttons work correctly.
 - **interpret-struggles:** `/api/interpret-struggles` maps free-text user descriptions to malady IDs using Gemini — used in the onboarding freeform input
 
 ## Extension UX — Popup
