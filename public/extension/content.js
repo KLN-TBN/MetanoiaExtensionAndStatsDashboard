@@ -69,7 +69,7 @@ const scrollIndices = {};
 // =============================================================
 let scanIndicatorEl = null;
 
-function setScanIndicator(active) {
+function setScanIndicator(active, foundCount) {
   if (!scanIndicatorEl) {
     scanIndicatorEl = document.createElement('div');
     scanIndicatorEl.className = 'metanoia-scan-indicator';
@@ -78,6 +78,10 @@ function setScanIndicator(active) {
   if (active) {
     scanIndicatorEl.textContent = 'M · SCANNING...';
     scanIndicatorEl.classList.add('visible');
+  } else if (foundCount === 0) {
+    // Briefly flash "CLEAR" so the user knows the scan completed cleanly
+    scanIndicatorEl.textContent = 'M · CLEAR';
+    setTimeout(() => scanIndicatorEl.classList.remove('visible'), 1200);
   } else {
     scanIndicatorEl.classList.remove('visible');
   }
@@ -244,11 +248,14 @@ function scrollToMalady(type) {
   const target = markers[idx];
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  // Auto-show popover for the scrolled-to marker
+  // Auto-show popover for the scrolled-to marker — wait for smooth scroll to settle
   const popover = target.querySelector('.metanoia-popover');
   if (popover) {
-    popover.classList.add('open');
-    setTimeout(() => popover.classList.remove('open'), 3000);
+    setTimeout(() => {
+      positionPopover(target, popover);
+      popover.classList.add('open');
+      setTimeout(() => popover.classList.remove('open'), 3000);
+    }, 500);
   }
 
   // Flash the dot to confirm which one was jumped to
@@ -317,7 +324,14 @@ if (document.readyState === 'complete') {
 } else {
   window.addEventListener('load', () => startScanTimer());
 }
-window.addEventListener('scroll', () => resetTimer());
+window.addEventListener('scroll', () => {
+  resetTimer();
+  // Keep any open popovers anchored to their dot as the page scrolls
+  document.querySelectorAll('.metanoia-popover.open').forEach(popover => {
+    const marker = popover.closest('.metanoia-marker');
+    if (marker) positionPopover(marker, popover);
+  });
+});
 window.addEventListener('click', () => resetTimer());
 window.addEventListener('touchend', () => resetTimer()); // YouTube Shorts swipe
 
@@ -405,10 +419,10 @@ async function performScan() {
     callbackFired = true;
     clearTimeout(safetyTimeout);
     isScanning = false;
-    setScanIndicator(false);
 
     if (chrome.runtime.lastError || !response || response.error) {
       console.error('[Metanoia Content] Scan error:', chrome.runtime.lastError || response?.error);
+      setScanIndicator(false);
       startScanTimer(); // keep scanning even on error
       return;
     }
@@ -437,6 +451,8 @@ async function performScan() {
       });
     }
 
+    setScanIndicator(false, injected.length);
+
     if (injected.length > 0) {
       showSummaryDrawer(injected);
     }
@@ -449,7 +465,7 @@ async function performScan() {
 //  GUTTER MARKER INJECTION
 // =============================================================
 function getBlockAncestor(el) {
-  const preferred = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'TD', 'TH', 'FIGCAPTION']);
+  const preferred = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'TD', 'TH', 'FIGCAPTION', 'FIGURE']);
   const fallbackTags = new Set(['DIV', 'ARTICLE', 'SECTION', 'MAIN', 'ASIDE']);
   let fallback = null;
   let current = el.parentElement;
@@ -571,6 +587,19 @@ function injectGutterMarker(malady) {
   return false;
 }
 
+// Positions a fixed popover next to its marker's dot.
+function positionPopover(marker, popover) {
+  const dotRect = marker.querySelector('.metanoia-dot').getBoundingClientRect();
+  popover.style.top = `${dotRect.top - 4}px`;
+  popover.style.left = `${dotRect.right + 8}px`;
+  popover.style.right = '';
+  // Flip left if it would overflow the right edge
+  const rect = popover.getBoundingClientRect();
+  if (rect.right > window.innerWidth - 20) {
+    popover.style.left = `${dotRect.left - 328}px`;
+  }
+}
+
 // Builds and inserts the gutter marker into `block`, wiring up all interactions.
 // `highlight` is the wrapping span for the flagged text, or null if unavailable.
 function attachMarker(malady, block, highlight) {
@@ -622,14 +651,8 @@ function attachMarker(malady, block, highlight) {
   // Show on hover, persist until the user clicks ×
   marker.addEventListener('mouseenter', () => {
     if (popover.classList.contains('open')) return; // already open, skip reflow
-    popover.style.left = '18px';
-    popover.style.right = '';
+    positionPopover(marker, popover);
     popover.classList.add('open');
-    const rect = popover.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 20) {
-      popover.style.left = 'auto';
-      popover.style.right = '18px';
-    }
   });
 
   marker.querySelector('.metanoia-dismiss').addEventListener('click', (e) => {

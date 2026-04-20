@@ -70,7 +70,12 @@ The extension sends `REQUEST_SYNC` via `window.postMessage`; the dashboard liste
 - Hovering the M dot opens the popover; it **persists** when the mouse moves away
 - Clicking × dismisses the marker permanently (removes from DOM, decrements count)
 - Popover show/hide is CSS `visibility`+`opacity` toggled by a `.open` class (not `display:none`) to avoid the `mouseleave`/`mouseenter` race that caused flicker
-- Position adjustment (flip left/right when near viewport edge) runs in JS on `mouseenter`
+- Popover is `position: fixed` (not `absolute`) — this escapes any `overflow: hidden` ancestor on host pages that would otherwise clip it
+- `positionPopover(marker, popover)` in `content.js` is the single source of truth for coordinate calculation; used by `mouseenter`, `scrollToMalady`, and the scroll listener
+- The scroll listener repositions all `.open` popovers on every scroll event so they track their dot
+- `scrollToMalady` waits 500 ms after `scrollIntoView` before positioning + opening the popover, giving the smooth scroll animation time to settle
+- `getBlockAncestor` includes `FIGURE` in its preferred tag set so image markers on Wikipedia-style sites (which wrap images in `<figure>`) attach next to the image rather than to a distant ancestor div
+- Scan indicator calls `setScanIndicator(false, injectedCount)`: shows "M · CLEAR" for 1.2 s when a scan completes with 0 new threats, so users can distinguish a clean scan from a silent failure
 
 ## Dashboard UX Conventions
 - **Stat cards** display `Math.round()` values — no decimals ever. Money uses a `$` prefix (e.g. `$7`), time/rage use a `min` suffix, viewpoints/urges/exposures have no unit. Six stat cards total in a 2/3/6-column responsive grid.

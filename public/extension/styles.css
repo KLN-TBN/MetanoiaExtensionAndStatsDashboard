@@ -87,9 +87,9 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease, visibility 0.12s;
-  position: absolute;
-  left: 18px;
-  top: -4px;
+  position: fixed;
+  left: 0;
+  top: 0;
   width: 320px;
   background: rgba(5, 5, 5, 0.97);
   border: 1px solid;
