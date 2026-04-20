@@ -21,6 +21,8 @@ export interface UserProfile {
     moneySaves: number;
     echoSaves: number;
     rageSaves: number;
+    gamblingUrges?: number;
+    lustExposures?: number;
   };
 }
 

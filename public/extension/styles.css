@@ -8,10 +8,12 @@
   transition: background 0.3s;
 }
 
-.metanoia-highlight.rabbit_hole  { background: rgba(0, 242, 255, 0.1); border-bottom: 1px dashed #00f2ff; }
-.metanoia-highlight.outrage_cycle { background: rgba(255, 68, 68, 0.1);  border-bottom: 1px dashed #ff4444; }
-.metanoia-highlight.echo_chamber  { background: rgba(0, 255, 0, 0.1);    border-bottom: 1px dashed #00ff00; }
-.metanoia-highlight.buy_now       { background: rgba(255, 0, 255, 0.1);  border-bottom: 1px dashed #ff00ff; }
+.metanoia-highlight.rabbit_hole       { background: rgba(0, 242, 255, 0.1);  border-bottom: 1px dashed #00f2ff; }
+.metanoia-highlight.outrage_cycle     { background: rgba(255, 68, 68, 0.1);   border-bottom: 1px dashed #ff4444; }
+.metanoia-highlight.echo_chamber      { background: rgba(0, 255, 0, 0.1);     border-bottom: 1px dashed #00ff00; }
+.metanoia-highlight.buy_now           { background: rgba(255, 0, 255, 0.1);   border-bottom: 1px dashed #ff00ff; }
+.metanoia-highlight.gambling_trigger  { background: rgba(255, 215, 0, 0.12);  border-bottom: 1px dashed #ffd700; }
+.metanoia-highlight.lust_trigger      { background: rgba(255, 105, 180, 0.1); border-bottom: 1px dashed #ff69b4; }
 
 /* --- Gutter Marker --- */
 .metanoia-marker {

@@ -5,9 +5,10 @@ document.getElementById('dashboardBtn').addEventListener('click', () => {
   });
 });
 
-chrome.storage.local.get(['uid', 'appUrl'], (result) => {
+chrome.storage.local.get(['uid', 'appUrl', 'displayName'], (result) => {
   if (result.uid && result.appUrl) {
-    document.getElementById('status').innerText = 'CONNECTED: ' + result.uid.slice(0, 8);
+    const name = result.displayName || result.uid.slice(0, 8);
+    document.getElementById('status').innerText = 'CONNECTED: ' + name;
   } else {
     document.getElementById('status').innerText = 'NOT CONNECTED';
   }

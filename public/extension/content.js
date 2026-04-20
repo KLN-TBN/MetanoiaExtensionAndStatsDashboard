@@ -1,7 +1,7 @@
 // Listen for sync event from the web app
 window.addEventListener('METANOIA_SYNC', (event) => {
-  const { uid, appUrl } = event.detail;
-  chrome.runtime.sendMessage({ type: 'SET_CONFIG', uid, appUrl });
+  const { uid, appUrl, enabledMaladies, displayName } = event.detail;
+  chrome.runtime.sendMessage({ type: 'SET_CONFIG', uid, appUrl, enabledMaladies: enabledMaladies || [], displayName: displayName || null });
   window.postMessage({ type: 'EXTENSION_CONNECTED' }, '*');
 });
 
@@ -33,14 +33,18 @@ const MALADY_COLORS = {
   rabbit_hole: '#00f2ff',
   outrage_cycle: '#ff4444',
   echo_chamber: '#00ff00',
-  buy_now: '#ff00ff'
+  buy_now: '#ff00ff',
+  gambling_trigger: '#ffd700',
+  lust_trigger: '#ff69b4'
 };
 
 const MALADY_LABELS = {
   rabbit_hole: 'Rabbit Hole',
   outrage_cycle: 'Outrage Cycle',
   echo_chamber: 'Echo Chamber',
-  buy_now: 'Buy Now Reflex'
+  buy_now: 'Buy Now Reflex',
+  gambling_trigger: 'Gambling Trigger',
+  lust_trigger: 'Lust Trigger'
 };
 
 // --- Scan state ---
@@ -258,6 +262,38 @@ function scrollToMalady(type) {
 }
 
 // =============================================================
+//  IMAGE EXTRACTION
+// =============================================================
+function extractViewportImages() {
+  const buffer = window.innerHeight * 1.5;
+  const seen = new Set();
+  const urls = [];
+  document.querySelectorAll('img').forEach(img => {
+    if (img.naturalWidth < 100 || img.naturalHeight < 100) return;
+    const rect = img.getBoundingClientRect();
+    if (rect.width === 0 || rect.top > window.innerHeight + buffer || rect.bottom < -buffer) return;
+    const src = img.currentSrc || img.src;
+    if (src && src.startsWith('http') && !seen.has(src) && !img.dataset.metanoiaFlagged) {
+      seen.add(src);
+      urls.push(src);
+    }
+  });
+  return urls.slice(0, 10);
+}
+
+function injectImageMarker(malady) {
+  const img = [...document.querySelectorAll('img')].find(
+    i => (i.currentSrc === malady.imageUrl || i.src === malady.imageUrl) && !i.dataset.metanoiaFlagged
+  );
+  if (!img) return;
+  img.dataset.metanoiaFlagged = '1';
+  img.style.filter = 'blur(20px) grayscale(60%)';
+  img.style.transition = 'filter 0.3s ease';
+  img.title = 'Metanoia: Content shielded';
+  activeMaladyCount++;
+}
+
+// =============================================================
 //  SCAN TIMER
 // =============================================================
 if (document.readyState === 'complete') {
@@ -342,10 +378,13 @@ async function performScan() {
     }
   }, 30000);
 
+  const imageUrls = extractViewportImages();
+
   chrome.runtime.sendMessage({
     type: 'SCAN_PAGE',
     text: rawText,   // real text so flaggedText matches the actual DOM
-    url: window.location.href
+    url: window.location.href,
+    imageUrls
   }, (response) => {
     callbackFired = true;
     clearTimeout(safetyTimeout);
@@ -358,8 +397,9 @@ async function performScan() {
       return;
     }
 
+    const injected = [];
+
     if (response.maladies && response.maladies.length > 0) {
-      const injected = [];
       response.maladies.forEach(m => {
         if (!processedFlaggedTexts.has(normKey(m.flaggedText))) {
           if (injectGutterMarker(m)) {
@@ -367,9 +407,17 @@ async function performScan() {
           }
         }
       });
-      if (injected.length > 0) {
-        showSummaryDrawer(injected);
-      }
+    }
+
+    if (response.imageMaladies && response.imageMaladies.length > 0) {
+      response.imageMaladies.forEach(m => {
+        injectImageMarker(m);
+        injected.push({ ...m, flaggedText: 'image', title: 'Lust Trigger' });
+      });
+    }
+
+    if (injected.length > 0) {
+      showSummaryDrawer(injected);
     }
 
     // No reschedule — scroll/click listeners and URL observer handle re-scanning

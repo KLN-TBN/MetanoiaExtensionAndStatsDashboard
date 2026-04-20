@@ -47,6 +47,24 @@ const MALADIES = [
     metricLabel: 'Estimated Money Saved',
     unit: '$',
     color: '#ff00ff'
+  },
+  {
+    id: 'gambling_trigger',
+    title: '🎰 Gambling Trigger',
+    description: '"I get pulled into sports betting, casino apps, or "free bet" offers. The odds feel designed to keep me hooked."',
+    metric: 'urge_avoided',
+    metricLabel: 'Gambling Urges Blocked',
+    unit: '',
+    color: '#ffd700'
+  },
+  {
+    id: 'lust_trigger',
+    title: '🔞 Lust Trigger',
+    description: '"I keep getting drawn into pornographic or sexually suggestive content online, even when I don\'t intend to."',
+    metric: 'exposure_avoided',
+    metricLabel: 'Exposures Blocked',
+    unit: '',
+    color: '#ff69b4'
   }
 ];
 
@@ -170,9 +188,36 @@ function Login() {
 
 function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) => void }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [freeText, setFreeText] = useState('');
+  const [interpreting, setInterpreting] = useState(false);
+  const [interpretedSummary, setInterpretedSummary] = useState<string | null>(null);
 
   const toggle = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleInterpret = async () => {
+    if (!freeText.trim()) return;
+    setInterpreting(true);
+    setInterpretedSummary(null);
+    try {
+      const res = await fetch('/api/interpret-struggles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: freeText.trim() })
+      });
+      const data = await res.json();
+      if (data.maladies?.length > 0) {
+        setSelected(prev => Array.from(new Set([...prev, ...data.maladies])));
+        setInterpretedSummary(data.summary || null);
+      } else {
+        setInterpretedSummary("I couldn't match that to a specific pattern — try selecting from the cards above.");
+      }
+    } catch {
+      setInterpretedSummary('Something went wrong. Try selecting from the cards above.');
+    } finally {
+      setInterpreting(false);
+    }
   };
 
   const handleComplete = async () => {
@@ -185,30 +230,65 @@ function Survey({ uid, onComplete }: { uid: string, onComplete: (res: string[]) 
     <div className="min-h-screen flex flex-col items-center justify-center p-4 max-w-4xl mx-auto space-y-8">
       <div className="text-center space-y-4">
         <h2 className="text-5xl font-bold tron-glow uppercase tracking-widest">Initial Assessment</h2>
-        <p className="text-[#00f2ff]/60">Which of these scenarios do you relate to? (Select all that apply)</p>
+        <p className="text-[#00f2ff]/60">What are you trying to protect yourself from online? Select all that apply.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-        {MALADIES.map((m) => (
-          <motion.div
-            key={m.id}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => toggle(m.id)}
-            className={`tron-card cursor-pointer transition-all ${selected.includes(m.id) ? 'bg-[#00f2ff]/20 border-[#00f2ff]' : 'opacity-60'}`}
+        {MALADIES.map((m) => {
+          const isSelected = selected.includes(m.id);
+          return (
+            <motion.div
+              key={m.id}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => toggle(m.id)}
+              className="tron-card cursor-pointer transition-all"
+              style={{
+                borderColor: isSelected ? m.color : undefined,
+                background: isSelected ? `${m.color}18` : undefined,
+                opacity: isSelected ? 1 : 0.6,
+              }}
+            >
+              <h3 className="text-2xl font-bold mb-2" style={{ color: isSelected ? m.color : undefined }}>{m.title}</h3>
+              <p className="text-base text-[#00f2ff]/80 italic">{m.description}</p>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      <div className="w-full tron-card space-y-4">
+        <p className="text-base text-[#00f2ff]/60">Or describe your struggle in your own words:</p>
+        <textarea
+          value={freeText}
+          onChange={e => setFreeText(e.target.value)}
+          placeholder="e.g. I keep falling into gambling sites after sports games..."
+          className="w-full bg-transparent border border-[#00f2ff]/30 rounded p-3 text-[#00f2ff] placeholder-[#00f2ff]/30 text-base resize-none focus:outline-none focus:border-[#00f2ff]/70"
+          rows={3}
+        />
+        <button
+          onClick={handleInterpret}
+          disabled={!freeText.trim() || interpreting}
+          className={`tron-button px-6 py-2 text-sm ${!freeText.trim() || interpreting ? 'opacity-30 cursor-not-allowed' : ''}`}
+        >
+          {interpreting ? 'Interpreting...' : 'Let Metanoia Interpret'}
+        </button>
+        {interpretedSummary && (
+          <motion.p
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-base text-[#00f2ff]/80 italic border-l-2 border-[#00f2ff]/40 pl-3"
           >
-            <h3 className="text-3xl font-bold mb-2">{m.title}</h3>
-            <p className="text-lg text-[#00f2ff]/80 italic">{m.description}</p>
-          </motion.div>
-        ))}
+            {interpretedSummary}
+          </motion.p>
+        )}
       </div>
 
       <button
         onClick={handleComplete}
         disabled={selected.length === 0}
-        className={`tron-button px-12 py-3 ${selected.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+        className={`tron-button px-12 py-3 text-lg ${selected.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
       >
-        Establish Protection
+        Establish Protection {selected.length > 0 ? `(${selected.length} active)` : ''}
       </button>
     </div>
   );
@@ -223,11 +303,15 @@ function Dashboard({ user, profile, logs, logsInitialized }: {
   const [downloading, setDownloading] = useState(false);
   const [extensionConnected, setExtensionConnected] = useState(false);
   const [logFilter, setLogFilter] = useState<string>('all');
+  const [editingFocus, setEditingFocus] = useState(false);
+  const [focusDraft, setFocusDraft] = useState<string[]>([]);
+  const [savingFocus, setSavingFocus] = useState(false);
 
   const syncWithExtension = () => {
     const appUrl = window.location.origin.replace(/\/$/, '');
+    const displayName = user.displayName || user.email || null;
     window.dispatchEvent(new CustomEvent('METANOIA_SYNC', {
-      detail: { uid: profile.uid, appUrl }
+      detail: { uid: profile.uid, appUrl, enabledMaladies: profile.surveyResults || [], displayName }
     }));
   };
 
@@ -307,11 +391,13 @@ function Dashboard({ user, profile, logs, logsInitialized }: {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard icon={<Clock />} label="Time Saves" value={profile.stats?.timeSaves || 0} color="#00f2ff" />
         <StatCard icon={<DollarSign />} label="Money Saves" value={profile.stats?.moneySaves || 0} color="#ff00ff" />
         <StatCard icon={<Eye />} label="Echo Saves" value={profile.stats?.echoSaves || 0} color="#00ff00" />
         <StatCard icon={<AlertTriangle />} label="Rage Saves" value={profile.stats?.rageSaves || 0} color="#ff4444" />
+        <StatCard icon={<Zap />} label="Urges Avoided" value={profile.stats?.gamblingUrges || 0} color="#ffd700" />
+        <StatCard icon={<Shield />} label="Exposures Blocked" value={profile.stats?.lustExposures || 0} color="#ff69b4" />
       </div>
 
       {/* Install extension guide appears first on mobile for new users */}
@@ -365,16 +451,53 @@ function Dashboard({ user, profile, logs, logsInitialized }: {
             <InstallExtensionCard downloading={downloading} onDownload={downloadExtension} />
           </div>
 
-          <h2 className="text-3xl font-bold flex items-center gap-2">
-            <Target className="w-5 h-5" /> PROTECTION FOCUS
-          </h2>
-          <div className="tron-card space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-3xl font-bold flex items-center gap-2">
+              <Target className="w-5 h-5" /> PROTECTION FOCUS
+            </h2>
+            {!editingFocus ? (
+              <button
+                onClick={() => { setFocusDraft(profile.surveyResults || []); setEditingFocus(true); }}
+                className="text-xs uppercase tracking-widest border border-[#00f2ff]/40 text-[#00f2ff]/60 hover:text-[#00f2ff] hover:border-[#00f2ff] px-3 py-1 transition-colors"
+              >
+                Edit
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingFocus(false)}
+                  className="text-xs uppercase tracking-widest border border-[#00f2ff]/30 text-[#00f2ff]/40 hover:text-[#00f2ff]/70 px-3 py-1 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (focusDraft.length === 0) return;
+                    setSavingFocus(true);
+                    await updateSurveyResults(profile.uid, focusDraft);
+                    syncWithExtension();
+                    setEditingFocus(false);
+                    setSavingFocus(false);
+                  }}
+                  disabled={savingFocus || focusDraft.length === 0}
+                  className={`text-xs uppercase tracking-widest border border-[#00f2ff] text-[#00f2ff] bg-[#00f2ff]/10 hover:bg-[#00f2ff]/20 px-3 py-1 transition-colors ${savingFocus || focusDraft.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  {savingFocus ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="tron-card space-y-2">
             {MALADIES.map(m => {
-              const active = profile.surveyResults?.includes(m.id);
+              const active = editingFocus ? focusDraft.includes(m.id) : profile.surveyResults?.includes(m.id);
               return (
                 <div
                   key={m.id}
-                  className="flex items-center justify-between p-2 border-l-2 transition-all"
+                  onClick={() => {
+                    if (!editingFocus) return;
+                    setFocusDraft(prev => prev.includes(m.id) ? prev.filter(i => i !== m.id) : [...prev, m.id]);
+                  }}
+                  className={`flex items-center justify-between p-2 border-l-2 transition-all ${editingFocus ? 'cursor-pointer hover:opacity-90' : ''}`}
                   style={{
                     borderColor: active ? m.color : 'transparent',
                     background: active ? `${m.color}0d` : 'transparent',
@@ -382,10 +505,22 @@ function Dashboard({ user, profile, logs, logsInitialized }: {
                   }}
                 >
                   <span className="text-lg" style={{ textDecoration: active ? 'none' : 'line-through' }}>{m.title}</span>
-                  {active && <Zap className="w-4 h-4 animate-pulse" style={{ color: m.color }} />}
+                  {editingFocus ? (
+                    <div
+                      className="w-4 h-4 border rounded-sm flex items-center justify-center flex-shrink-0"
+                      style={{ borderColor: m.color, background: active ? m.color : 'transparent' }}
+                    >
+                      {active && <span className="text-[#050505] text-xs font-bold leading-none">✓</span>}
+                    </div>
+                  ) : (
+                    active && <Zap className="w-4 h-4 animate-pulse" style={{ color: m.color }} />
+                  )}
                 </div>
               );
             })}
+            {editingFocus && focusDraft.length === 0 && (
+              <p className="text-xs text-[#ff4444]/70 pt-1 pl-2">Select at least one to save.</p>
+            )}
           </div>
 
         </div>
