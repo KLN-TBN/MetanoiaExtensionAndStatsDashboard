@@ -265,20 +265,27 @@ function scrollToMalady(type) {
 //  IMAGE EXTRACTION
 // =============================================================
 function extractViewportImages() {
-  const buffer = window.innerHeight * 1.5;
   const seen = new Set();
-  const urls = [];
+  const candidates = [];
+
   document.querySelectorAll('img').forEach(img => {
-    if (img.naturalWidth < 100 || img.naturalHeight < 100) return;
+    if (img.dataset.metanoiaFlagged) return;
     const rect = img.getBoundingClientRect();
-    if (rect.width === 0 || rect.top > window.innerHeight + buffer || rect.bottom < -buffer) return;
+    // Must be actually on screen right now
+    if (rect.width < 100 || rect.height < 100) return;
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) return;
+    if (rect.right <= 0 || rect.left >= window.innerWidth) return;
     const src = img.currentSrc || img.src;
-    if (src && src.startsWith('http') && !seen.has(src) && !img.dataset.metanoiaFlagged) {
-      seen.add(src);
-      urls.push(src);
-    }
+    if (!src || !src.startsWith('http') || seen.has(src)) return;
+    seen.add(src);
+    // Score by how much of the image is visible on screen
+    const visibleArea = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    candidates.push({ src, area: rect.width * visibleArea });
   });
-  return urls.slice(0, 10);
+
+  // Largest visible images first — most likely to be meaningful content
+  candidates.sort((a, b) => b.area - a.area);
+  return candidates.slice(0, 8).map(c => c.src);
 }
 
 function injectImageMarker(malady) {
@@ -289,8 +296,17 @@ function injectImageMarker(malady) {
   img.dataset.metanoiaFlagged = '1';
   img.style.filter = 'blur(20px) grayscale(60%)';
   img.style.transition = 'filter 0.3s ease';
-  img.title = 'Metanoia: Content shielded';
-  activeMaladyCount++;
+
+  const block = getBlockAncestor(img);
+  attachMarker({
+    maladyType: 'lust_trigger',
+    title: MALADY_LABELS.lust_trigger,
+    explanation: malady.explanation || 'Sexually suggestive image detected.',
+    flaggedText: null,
+    counterPerspective: null,
+    metricValue: 0,
+    logId: malady.logId || null
+  }, block, null);
 }
 
 // =============================================================
@@ -412,7 +428,12 @@ async function performScan() {
     if (response.imageMaladies && response.imageMaladies.length > 0) {
       response.imageMaladies.forEach(m => {
         injectImageMarker(m);
-        injected.push({ ...m, flaggedText: 'image', title: 'Lust Trigger' });
+        injected.push({
+          maladyType: 'lust_trigger',
+          title: 'Lust Trigger',
+          flaggedText: 'image',
+          explanation: m.explanation
+        });
       });
     }
 

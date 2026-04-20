@@ -38,7 +38,7 @@ const MALADY_METRIC_TYPE: Record<string, string> = {
 };
 
 async function scanImages(ai: GoogleGenAI, imageUrls: string[]): Promise<any[]> {
-  const LIMIT = 5;
+  const LIMIT = 8;
   const urls = imageUrls.slice(0, LIMIT);
   const imageParts: any[] = [];
   const urlMap: string[] = [];
@@ -347,7 +347,8 @@ async function startServer() {
               counterPerspective: null,
               timestamp: Timestamp.now()
             };
-            await db.collection('malady_logs').add(logData);
+            const imageDocRef = await db.collection('malady_logs').add(logData);
+            malady.logId = imageDocRef.id;
             const userRef = db.collection('users').doc(userId);
             const userSnap = await userRef.get();
             if (userSnap.exists) {
